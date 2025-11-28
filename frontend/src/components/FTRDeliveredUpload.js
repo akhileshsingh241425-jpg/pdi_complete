@@ -14,7 +14,7 @@ const FTRDeliveredUpload = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('http://93.127.194.235:5002/api/master/orders');
+      const response = await fetch('http://backend.gspl.cloud/api/master/orders');
       const data = await response.json();
       setOrders(data.orders || []);
     } catch (error) {
@@ -41,7 +41,7 @@ const FTRDeliveredUpload = () => {
       formData.append('file', file);
       formData.append('order_id', selectedOrder);
 
-      const response = await fetch('http://93.127.194.235:5002/api/master/upload-delivered-ftr', {
+      const response = await fetch('http://backend.gspl.cloud/api/master/upload-delivered-ftr', {
         method: 'POST',
         body: formData
       });

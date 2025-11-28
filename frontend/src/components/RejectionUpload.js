@@ -14,7 +14,7 @@ const RejectionUpload = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('http://93.127.194.235:5002/api/master/orders');
+      const response = await fetch('http://backend.gspl.cloud/api/master/orders');
       const result = await response.json();
       if (response.ok) {
         setOrders(result.orders);
@@ -43,7 +43,7 @@ const RejectionUpload = () => {
       formData.append('file', file);
       formData.append('order_id', selectedOrder);
 
-      const response = await fetch('http://93.127.194.235:5002/api/master/upload-rejections', {
+      const response = await fetch('http://backend.gspl.cloud/api/master/upload-rejections', {
         method: 'POST',
         body: formData
       });

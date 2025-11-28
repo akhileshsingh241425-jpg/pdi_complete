@@ -586,7 +586,7 @@ function DailyReport() {
         report_options: reportOptions
       };
 
-      const response = await axios.post('http://93.127.194.235:5002/api/generate-production-report', payload, {
+      const response = await axios.post('http://backend.gspl.cloud/api/generate-production-report', payload, {
         responseType: 'blob'
       });
 
@@ -678,7 +678,7 @@ function DailyReport() {
         report_options: reportOptions
       };
 
-      const response = await axios.post('http://93.127.194.235:5002/api/generate-production-excel', payload, {
+      const response = await axios.post('http://backend.gspl.cloud/api/generate-production-excel', payload, {
         responseType: 'blob'
       });
 

@@ -3,7 +3,7 @@
  */
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://93.127.194.235:5002/api';
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://backend.gspl.cloud/api';
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,

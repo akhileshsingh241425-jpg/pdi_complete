@@ -5,10 +5,12 @@ from flask import Blueprint, request, jsonify, send_file, current_app
 from werkzeug.utils import secure_filename
 import os
 import json
+import zipfile
 from datetime import datetime
 
 from app.services.form_generator import IPQCFormGenerator
 from app.services.pdf_generator import IPQCPDFGenerator, SerialNumberGenerator
+from app.services.excel_generator import generate_ipqc_excel
 from app.models.ipqc_data import BOMData
 
 ipqc_bp = Blueprint('ipqc', __name__)
@@ -58,8 +60,13 @@ def generate_ipqc():
         shift = data.get('shift')
         customer_id = data.get('customer_id')
         po_number = data.get('po_number')
-        serial_start = data.get('serial_start', 10001)
+        serial_prefix = data.get('serial_prefix', 'GS04875KG302250')
+        serial_start = data.get('serial_start', 1)
         module_count = data.get('module_count', 1)
+        cell_manufacturer = data.get('cell_manufacturer', 'Solar Space')
+        cell_efficiency = data.get('cell_efficiency', 25.7)
+        jb_cable_length = data.get('jb_cable_length', 1200)
+        golden_module_number = data.get('golden_module_number', 'GM-2024-001')
         
         # Generate IPQC form
         ipqc_form = form_generator.generate_form(
@@ -67,8 +74,13 @@ def generate_ipqc():
             shift=shift,
             customer_id=customer_id,
             po_number=po_number,
+            serial_prefix=serial_prefix,
             serial_start=serial_start,
-            module_count=module_count
+            module_count=module_count,
+            cell_manufacturer=cell_manufacturer,
+            cell_efficiency=cell_efficiency,
+            jb_cable_length=jb_cable_length,
+            golden_module_number=golden_module_number
         )
         
         return jsonify({
@@ -131,10 +143,117 @@ def generate_pdf():
         }), 500
 
 
+@ipqc_bp.route('/generate-pdf-only', methods=['POST'])
+def generate_pdf_only():
+    """
+    Generate IPQC PDF only
+    """
+    try:
+        data = request.get_json()
+        
+        customer = data.get('customer_id') or data.get('customer') or 'Boeing'
+        po_number = data.get('po_number') or f"PO-{data.get('date', '20240115').replace('-', '')}"
+        serial_prefix = data.get('serial_prefix', 'GS04875KG302250')
+        cell_manufacturer = data.get('cell_manufacturer', 'Solar Space')
+        cell_efficiency = data.get('cell_efficiency', 25.7)
+        jb_cable_length = data.get('jb_cable_length', 1200)
+        golden_module_number = data.get('golden_module_number', 'GM-2024-001')
+        
+        # Generate IPQC form
+        ipqc_form = form_generator.generate_form(
+            date=data.get('date'),
+            shift=data.get('shift'),
+            customer_id=customer,
+            po_number=po_number,
+            serial_prefix=serial_prefix,
+            serial_start=data.get('serial_start', 1),
+            module_count=data.get('module_count', 1),
+            cell_manufacturer=cell_manufacturer,
+            cell_efficiency=cell_efficiency,
+            jb_cable_length=jb_cable_length,
+            golden_module_number=golden_module_number
+        )
+        
+        # Generate PDF only
+        pdf_folder = current_app.config['PDF_FOLDER']
+        pdf_generator = IPQCPDFGenerator(pdf_folder)
+        
+        pdf_path = pdf_generator.generate_ipqc_pdf(
+            ipqc_data=ipqc_form.get('stages', []),
+            bom_data=ipqc_form.get('bom', {}),
+            metadata=ipqc_form.get('metadata', {})
+        )
+        
+        return send_file(
+            pdf_path,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=os.path.basename(pdf_path)
+        )
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to generate PDF report"
+        }), 500
+
+
+@ipqc_bp.route('/generate-excel-only', methods=['POST'])
+def generate_excel_only():
+    """
+    Generate IPQC Excel only
+    """
+    try:
+        data = request.get_json()
+        
+        customer = data.get('customer_id') or data.get('customer') or 'Boeing'
+        po_number = data.get('po_number') or f"PO-{data.get('date', '20240115').replace('-', '')}"
+        serial_prefix = data.get('serial_prefix', 'GS04875KG302250')
+        cell_manufacturer = data.get('cell_manufacturer', 'Solar Space')
+        cell_efficiency = data.get('cell_efficiency', 25.7)
+        jb_cable_length = data.get('jb_cable_length', 1200)
+        golden_module_number = data.get('golden_module_number', 'GM-2024-001')
+        
+        # Generate IPQC form
+        ipqc_form = form_generator.generate_form(
+            date=data.get('date'),
+            shift=data.get('shift'),
+            customer_id=customer,
+            po_number=po_number,
+            serial_prefix=serial_prefix,
+            serial_start=data.get('serial_start', 1),
+            module_count=data.get('module_count', 1),
+            cell_manufacturer=cell_manufacturer,
+            cell_efficiency=cell_efficiency,
+            jb_cable_length=jb_cable_length,
+            golden_module_number=golden_module_number
+        )
+        
+        # Generate Excel only
+        excel_path = generate_ipqc_excel(
+            ipqc_data=ipqc_form.get('stages', []),
+            bom_data=ipqc_form.get('bom', {}),
+            metadata=ipqc_form.get('metadata', {})
+        )
+        
+        return send_file(
+            excel_path,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=os.path.basename(excel_path)
+        )
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to generate Excel report"
+        }), 500
+
+
 @ipqc_bp.route('/generate-complete', methods=['POST'])
 def generate_complete():
     """
-    Complete workflow: Generate IPQC form and return PDF directly
+    Complete workflow: Generate IPQC form and return ZIP with both PDF and Excel
     
     Expected JSON:
     {
@@ -152,6 +271,11 @@ def generate_complete():
         # Support both 'customer' and 'customer_id' parameter names
         customer = data.get('customer_id') or data.get('customer') or 'Boeing'
         po_number = data.get('po_number') or f"PO-{data.get('date', '20240115').replace('-', '')}"
+        serial_prefix = data.get('serial_prefix', 'GS04875KG302250')
+        cell_manufacturer = data.get('cell_manufacturer', 'Solar Space')
+        cell_efficiency = data.get('cell_efficiency', 25.7)
+        jb_cable_length = data.get('jb_cable_length', 1200)
+        golden_module_number = data.get('golden_module_number', 'GM-2024-001')
         
         # Generate IPQC form
         ipqc_form = form_generator.generate_form(
@@ -159,8 +283,13 @@ def generate_complete():
             shift=data.get('shift'),
             customer_id=customer,
             po_number=po_number,
-            serial_start=data.get('serial_start', 10001),
-            module_count=data.get('module_count', 1)
+            serial_prefix=serial_prefix,
+            serial_start=data.get('serial_start', 1),
+            module_count=data.get('module_count', 1),
+            cell_manufacturer=cell_manufacturer,
+            cell_efficiency=cell_efficiency,
+            jb_cable_length=jb_cable_length,
+            golden_module_number=golden_module_number
         )
         
         # Generate PDF
@@ -173,12 +302,27 @@ def generate_complete():
             metadata=ipqc_form.get('metadata', {})
         )
         
-        # Return PDF
+        # Generate Excel
+        excel_path = generate_ipqc_excel(
+            ipqc_data=ipqc_form.get('stages', []),
+            bom_data=ipqc_form.get('bom', {}),
+            metadata=ipqc_form.get('metadata', {})
+        )
+        
+        # Create ZIP file with both PDF and Excel
+        zip_filename = f"IPQC_Report_{customer.replace('/', '_')}_{data.get('date', '').replace('-', '')}.zip"
+        zip_path = os.path.join(pdf_folder, zip_filename)
+        
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            zipf.write(pdf_path, os.path.basename(pdf_path))
+            zipf.write(excel_path, os.path.basename(excel_path))
+        
+        # Return ZIP file
         return send_file(
-            pdf_path,
-            mimetype='application/pdf',
+            zip_path,
+            mimetype='application/zip',
             as_attachment=True,
-            download_name=os.path.basename(pdf_path)
+            download_name=zip_filename
         )
         
     except Exception as e:
@@ -340,4 +484,106 @@ def template_info():
     except Exception as e:
         return jsonify({
             "error": str(e)
+        }), 500
+
+
+@ipqc_bp.route('/rejections/bulk', methods=['POST'])
+def add_bulk_rejections():
+    """
+    Add multiple rejections from Excel upload (unique serials only)
+    
+    Expected JSON:
+    {
+        "company_id": 1,
+        "rejections": [
+            {
+                "rejection_date": "2024-01-15",
+                "serial_number": "12345",
+                "rejection_reason": "...",
+                "stage": "...",
+                "defect_type": "Minor"
+            },
+            ...
+        ]
+    }
+    """
+    try:
+        from app.models.database import get_db_connection
+        
+        data = request.get_json()
+        
+        if 'company_id' not in data or 'rejections' not in data:
+            return jsonify({
+                "error": "Missing company_id or rejections"
+            }), 400
+        
+        company_id = data['company_id']
+        rejections = data['rejections']
+        
+        if not rejections or len(rejections) == 0:
+            return jsonify({
+                "error": "No rejections provided"
+            }), 400
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Get existing serial numbers for this company to prevent duplicates
+        cursor.execute("""
+            SELECT serial_number 
+            FROM rejected_modules 
+            WHERE company_id = %s
+        """, (company_id,))
+        
+        existing_serials = set(row[0] for row in cursor.fetchall())
+        
+        # Filter unique rejections
+        unique_rejections = [
+            r for r in rejections 
+            if r.get('serial_number') not in existing_serials
+        ]
+        
+        if not unique_rejections:
+            conn.close()
+            return jsonify({
+                "success": True,
+                "message": "All serial numbers already exist",
+                "added": 0,
+                "skipped": len(rejections)
+            }), 200
+        
+        # Insert unique rejections
+        added_count = 0
+        for rejection in unique_rejections:
+            cursor.execute("""
+                INSERT INTO rejected_modules 
+                (company_id, rejection_date, serial_number, rejection_reason, stage, defect_type)
+                VALUES (%s, %s, %s, %s, %s, %s)
+            """, (
+                company_id,
+                rejection.get('rejection_date'),
+                rejection.get('serial_number'),
+                rejection.get('rejection_reason'),
+                rejection.get('stage', 'Not Specified'),
+                rejection.get('defect_type', 'Minor')
+            ))
+            added_count += 1
+        
+        conn.commit()
+        conn.close()
+        
+        skipped_count = len(rejections) - added_count
+        
+        return jsonify({
+            "success": True,
+            "message": f"Successfully added {added_count} rejection(s)",
+            "added": added_count,
+            "skipped": skipped_count,
+            "total_received": len(rejections)
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to add bulk rejections"
         }), 500

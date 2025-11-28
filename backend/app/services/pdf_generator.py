@@ -71,26 +71,17 @@ class IPQCPDFGenerator:
             bottomMargin=10*mm
         )
         
-        # Build content
+        # Build content - first page with header, then continuous stages
         story = []
         
-        # Add pages for each stage group
-        stages_per_page = 6
-        for i in range(0, len(ipqc_data), stages_per_page):
-            stage_group = ipqc_data[i:i+stages_per_page]
-            
-            # Add header on each page
-            story.extend(self._create_header(metadata))
-            story.append(Spacer(1, 5*mm))
-            
-            # Add stages table
-            story.append(self._create_stages_table(stage_group))
-            
-            # Add page break except for last page
-            if i + stages_per_page < len(ipqc_data):
-                story.append(PageBreak())
+        # Add header only on first page
+        story.extend(self._create_header(metadata))
+        story.append(Spacer(1, 2*mm))
         
-        # Build PDF
+        # Add all stages in one continuous table (no page breaks between stages)
+        story.append(self._create_stages_table(ipqc_data))
+        
+        # Build PDF with automatic page breaks
         doc.build(story)
         
         return filepath
@@ -200,8 +191,8 @@ class IPQCPDFGenerator:
                 
                 table_data.append(row)
         
-        # Create table
-        table = Table(table_data, colWidths=[15*mm, 35*mm, 45*mm, 30*mm, 50*mm, 50*mm, 35*mm])
+        # Create table with column widths matching header tables (total 270mm)
+        table = Table(table_data, colWidths=[15*mm, 35*mm, 45*mm, 35*mm, 50*mm, 55*mm, 35*mm])
         
         # Apply styling
         table.setStyle(TableStyle([
@@ -210,13 +201,13 @@ class IPQCPDFGenerator:
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             
             # All cells
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('FONTSIZE', (0, 1), (-1, -1), 7),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
             ('LEFTPADDING', (0, 0), (-1, -1), 3),
             ('RIGHTPADDING', (0, 0), (-1, -1), 3),
             ('TOPPADDING', (0, 0), (-1, -1), 3),

@@ -148,14 +148,14 @@ class IPQCTemplate:
                 {
                     "checkpoint": "Visual Check after Stringing",
                     "sample_size": "once",
-                    "frequency": "1 String/T5 shift",
+                    "frequency": "1 String/TS/Shift",
                     "acceptance_criteria": "TS Visual Criteria",
                     "tolerance": {"type": "visual"}
                 },
                 {
                     "checkpoint": "EL Image of Strings",
                     "sample_size": "once",
-                    "frequency": "1 String/T5 shift",
+                    "frequency": "1 String/TS/Shift",
                     "acceptance_criteria": "TS EL Criteria",
                     "tolerance": {"type": "visual"}
                 },

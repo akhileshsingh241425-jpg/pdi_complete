@@ -1,0 +1,92 @@
+from flask import Blueprint, request, send_file, jsonify
+from app.services.production_pdf_generator import ProductionPDFGenerator
+from app.services.excel_generator import generate_production_excel
+from datetime import datetime
+import os
+
+production_bp = Blueprint('production', __name__)
+
+@production_bp.route('/api/generate-production-report', methods=['POST'])
+def generate_production_report():
+    """Generate production report PDF"""
+    try:
+        data = request.json
+        
+        # Validate required fields
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Generate PDF
+        pdf_generator = ProductionPDFGenerator()
+        pdf_buffer = pdf_generator.generate_production_report(data, 'production_report.pdf')
+        
+        # Save to generated_pdfs folder
+        output_dir = os.path.join(os.path.dirname(__file__), '../../generated_pdfs')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        filename = f"Production_Report_{data.get('start_date')}_{data.get('end_date')}.pdf"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, 'wb') as f:
+            f.write(pdf_buffer.getvalue())
+        
+        # Return the PDF
+        pdf_buffer.seek(0)
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Error generating production report: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+@production_bp.route('/api/generate-production-excel', methods=['POST'])
+def generate_production_excel_report():
+    """Generate production report Excel"""
+    try:
+        data = request.json
+        
+        # Validate required fields
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Extract data
+        company = data.get('company', {})
+        production_data = data.get('production_data', [])
+        rejections = data.get('rejections', [])
+        start_date = data.get('start_date', '')
+        end_date = data.get('end_date', '')
+        cells_received_qty = data.get('cells_received_qty', 0)
+        cells_received_mw = data.get('cells_received_mw', 0)
+        report_options = data.get('report_options', {})
+        
+        # Generate Excel
+        filepath = generate_production_excel(
+            company, 
+            production_data, 
+            rejections, 
+            start_date, 
+            end_date,
+            cells_received_qty,
+            cells_received_mw,
+            report_options
+        )
+        
+        # Return the Excel file
+        return send_file(
+            filepath,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=os.path.basename(filepath)
+        )
+        
+    except Exception as e:
+        print(f"Error generating Excel report: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

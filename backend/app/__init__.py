@@ -4,19 +4,47 @@ import os
 
 def create_app():
     app = Flask(__name__)
-    CORS(app)
     
-    # Configuration
+    # Load configuration
+    app.config.from_object('config.Config')
+    
+    # CORS configuration - allow frontend domain
+    frontend_url = app.config.get('FRONTEND_URL', 'http://localhost:3000')
+    CORS(app, resources={
+        r"/api/*": {
+            "origins": [frontend_url, "http://localhost:3000", "http://localhost:3001"],
+            "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+            "allow_headers": ["Content-Type", "Authorization"]
+        }
+    })
+    
+    # Folder configuration
     app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), '..', 'uploads')
     app.config['PDF_FOLDER'] = os.path.join(os.path.dirname(__file__), '..', 'generated_pdfs')
-    app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max file size
+    app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB max file size (for 500k rows)
     
     # Ensure folders exist
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     os.makedirs(app.config['PDF_FOLDER'], exist_ok=True)
     
+    # Initialize database
+    from app.models.database import db
+    db.init_app(app)
+    
+    # Create tables
+    with app.app_context():
+        db.create_all()
+    
     # Register blueprints
     from app.routes.ipqc_routes import ipqc_bp
+    from app.routes.production_routes import production_bp
+    from app.routes.company_routes import company_bp
+    from app.routes.peel_test_routes import peel_test_bp
+    from app.routes.master_routes import master_bp
     app.register_blueprint(ipqc_bp, url_prefix='/api')
+    app.register_blueprint(production_bp)
+    app.register_blueprint(company_bp)
+    app.register_blueprint(peel_test_bp, url_prefix='/api/peel-test')
+    app.register_blueprint(master_bp)
     
     return app

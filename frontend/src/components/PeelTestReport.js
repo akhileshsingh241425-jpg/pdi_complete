@@ -29,7 +29,7 @@ const PeelTestReport = () => {
     setMessage({ text: '⏳ Generating Excel reports...', type: 'info' });
 
     try {
-      const response = await fetch('http://localhost:5000/api/peel-test/generate-excel', {
+      const response = await fetch('http://93.127.194.235:5002/api/peel-test/generate-excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

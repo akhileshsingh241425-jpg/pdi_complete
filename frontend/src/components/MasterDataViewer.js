@@ -26,7 +26,7 @@ const MasterDataViewer = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/master/orders');
+      const response = await fetch('http://93.127.194.235:5002/api/master/orders');
       const result = await response.json();
       if (response.ok) {
         setOrders(result.orders);
@@ -40,7 +40,7 @@ const MasterDataViewer = () => {
     setLoading(true);
     try {
       const offset = (currentPage - 1) * modulesPerPage;
-      let url = `http://localhost:5000/api/master/modules/${selectedOrder}?limit=${modulesPerPage}&offset=${offset}`;
+      let url = `http://93.127.194.235:5002/api/master/modules/${selectedOrder}?limit=${modulesPerPage}&offset=${offset}`;
       
       if (searchSerial) {
         url += `&search=${searchSerial}`;
@@ -66,7 +66,7 @@ const MasterDataViewer = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/master/module/${moduleId}`, {
+      const response = await fetch(`http://93.127.194.235:5002/api/master/module/${moduleId}`, {
         method: 'DELETE'
       });
 
@@ -89,7 +89,7 @@ const MasterDataViewer = () => {
     }
 
     try {
-      const response = await fetch(`http://localhost:5000/api/master/order/${orderId}`, {
+      const response = await fetch(`http://93.127.194.235:5002/api/master/order/${orderId}`, {
         method: 'DELETE'
       });
 
@@ -108,7 +108,7 @@ const MasterDataViewer = () => {
 
   const updateModule = async () => {
     try {
-      const response = await fetch(`http://localhost:5000/api/master/module/${editModule.id}`, {
+      const response = await fetch(`http://93.127.194.235:5002/api/master/module/${editModule.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editModule)

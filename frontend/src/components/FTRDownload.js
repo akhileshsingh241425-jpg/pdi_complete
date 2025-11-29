@@ -17,7 +17,7 @@ const FTRDownload = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('http://backend.gspl.cloud/api/master/orders');
+      const response = await fetch('https://backend.gspl.cloud/api/master/orders');
       const result = await response.json();
       if (response.ok) {
         setOrders(result.orders);
@@ -45,7 +45,7 @@ const FTRDownload = () => {
     setMessage({ text: '⏳ Downloading FTR data...', type: 'info' });
 
     try {
-      const response = await fetch('http://backend.gspl.cloud/api/master/download-ftr-by-quantity', {
+      const response = await fetch('https://backend.gspl.cloud/api/master/download-ftr-by-quantity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -93,7 +93,7 @@ const FTRDownload = () => {
     setMessage({ text: '⏳ Downloading FTR data...', type: 'info' });
 
     try {
-      const response = await fetch('http://backend.gspl.cloud/api/master/download-ftr-by-serials', {
+      const response = await fetch('https://backend.gspl.cloud/api/master/download-ftr-by-serials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -162,7 +162,7 @@ const FTRDownload = () => {
           }
 
           // Download FTR data
-          const response = await fetch('http://backend.gspl.cloud/api/master/download-ftr-by-serials', {
+          const response = await fetch('https://backend.gspl.cloud/api/master/download-ftr-by-serials', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

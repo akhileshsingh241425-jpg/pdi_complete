@@ -29,7 +29,7 @@ const PeelTestReport = () => {
     setMessage({ text: '⏳ Generating Excel reports...', type: 'info' });
 
     try {
-      const response = await fetch('http://backend.gspl.cloud/api/peel-test/generate-excel', {
+      const response = await fetch('https://backend.gspl.cloud/api/peel-test/generate-excel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

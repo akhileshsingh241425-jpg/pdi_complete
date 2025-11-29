@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 import os
 
@@ -46,5 +46,14 @@ def create_app():
     app.register_blueprint(company_bp)
     app.register_blueprint(peel_test_bp, url_prefix='/api/peel-test')
     app.register_blueprint(master_bp)
+    
+    # Serve React frontend
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def serve_frontend(path):
+        static_folder = os.path.join(os.path.dirname(__file__), '..', 'static')
+        if path and os.path.exists(os.path.join(static_folder, path)):
+            return send_from_directory(static_folder, path)
+        return send_from_directory(static_folder, 'index.html')
     
     return app

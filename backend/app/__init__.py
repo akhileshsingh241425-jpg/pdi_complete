@@ -9,7 +9,7 @@ def create_app():
     app.config.from_object('config.Config')
     
     # CORS configuration - allow frontend domain
-    frontend_url = app.config.get('FRONTEND_URL', 'http://localhost:3000')
+    frontend_url = 'https://pdi.gspl.cloud'  # Hardcoded for production
     CORS(app, resources={
         r"/api/*": {
             "origins": [frontend_url, "http://localhost:3000", "http://localhost:3001"],

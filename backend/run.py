@@ -29,14 +29,9 @@ if __name__ == '__main__':
     print("📝 For PRODUCTION, use: python production_server.py")
     print("=" * 60)
     
-    # Try to find a free port
-    port = int(os.environ.get('PORT', 0))
-    if port == 0:
-        port = find_free_port()
-        if port is None:
-            print("❌ No free port available between 5000-5100")
-            exit(1)
-        print(f"✅ Using available port: {port}")
+    # Hardcoded port for production deployment
+    port = 5002
+    print(f"✅ Running on FIXED PORT: {port}")
     
     print("=" * 60)
     app.run(host='0.0.0.0', port=port, debug=True, use_reloader=True, reloader_type='stat')

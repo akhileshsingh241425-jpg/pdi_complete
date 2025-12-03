@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiUrl } from '../services/apiService';
 import '../styles/MasterDataUpload.css';
 
 const MasterDataUpload = () => {
@@ -39,7 +40,7 @@ const MasterDataUpload = () => {
     const startPolling = (orderId) => {
       pollInterval = setInterval(async () => {
         try {
-          const response = await fetch(`https://backend.gspl.cloud/api/master/upload-progress/${orderId}`);
+          const response = await fetch(getApiUrl(`master/upload-progress/${orderId}`));
           const progress = await response.json();
           
           if (progress.percent > 50) {
@@ -85,7 +86,7 @@ const MasterDataUpload = () => {
 
       // Send request
       const response = await new Promise((resolve, reject) => {
-        xhr.open('POST', 'https://backend.gspl.cloud/api/master/upload-excel');
+        xhr.open('POST', getApiUrl('master/upload-excel'));
         
         xhr.onload = () => resolve(xhr);
         xhr.onerror = () => reject(new Error('Upload failed'));
@@ -155,7 +156,7 @@ const MasterDataUpload = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('https://backend.gspl.cloud/api/master/orders');
+      const response = await fetch(getApiUrl('master/orders'));
       const result = await response.json();
       if (response.ok) {
         setOrders(result.orders);

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { getApiUrl } from '../services/apiService';
 import '../styles/PeelTestReport.css';
 
 const PeelTestReport = () => {
@@ -29,7 +30,7 @@ const PeelTestReport = () => {
     setMessage({ text: '⏳ Generating Excel reports...', type: 'info' });
 
     try {
-      const response = await fetch('https://backend.gspl.cloud/api/peel-test/generate-excel', {
+      const response = await fetch(getApiUrl('peel-test/generate-excel'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData)

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import '../styles/RejectionAnalysis.css'; // Reuse same styling
+import { getApiUrl } from '../services/apiService';
 
 const FTRDeliveredUpload = () => {
   const [orders, setOrders] = useState([]);
@@ -14,7 +15,7 @@ const FTRDeliveredUpload = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('https://backend.gspl.cloud/api/master/orders');
+      const response = await fetch(getApiUrl('master/orders'));
       const data = await response.json();
       setOrders(data.orders || []);
     } catch (error) {
@@ -41,7 +42,7 @@ const FTRDeliveredUpload = () => {
       formData.append('file', file);
       formData.append('order_id', selectedOrder);
 
-      const response = await fetch('https://backend.gspl.cloud/api/master/upload-delivered-ftr', {
+      const response = await fetch(getApiUrl('master/upload-delivered-ftr'), {
         method: 'POST',
         body: formData
       });

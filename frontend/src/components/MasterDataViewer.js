@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '../services/apiService';
 import '../styles/MasterDataViewer.css';
 
 const MasterDataViewer = () => {
@@ -26,7 +27,7 @@ const MasterDataViewer = () => {
 
   const fetchOrders = async () => {
     try {
-      const response = await fetch('https://backend.gspl.cloud/api/master/orders');
+      const response = await fetch(getApiUrl('master/orders'));
       const result = await response.json();
       if (response.ok) {
         setOrders(result.orders);
@@ -40,7 +41,7 @@ const MasterDataViewer = () => {
     setLoading(true);
     try {
       const offset = (currentPage - 1) * modulesPerPage;
-      let url = `https://backend.gspl.cloud/api/master/modules/${selectedOrder}?limit=${modulesPerPage}&offset=${offset}`;
+      let url = getApiUrl(`master/modules/${selectedOrder}?limit=${modulesPerPage}&offset=${offset}`);
       
       if (searchSerial) {
         url += `&search=${searchSerial}`;
@@ -66,7 +67,7 @@ const MasterDataViewer = () => {
     }
 
     try {
-      const response = await fetch(`https://backend.gspl.cloud/api/master/module/${moduleId}`, {
+      const response = await fetch(getApiUrl(`master/module/${moduleId}`), {
         method: 'DELETE'
       });
 
@@ -89,7 +90,7 @@ const MasterDataViewer = () => {
     }
 
     try {
-      const response = await fetch(`https://backend.gspl.cloud/api/master/order/${orderId}`, {
+      const response = await fetch(getApiUrl(`master/order/${orderId}`), {
         method: 'DELETE'
       });
 
@@ -108,7 +109,7 @@ const MasterDataViewer = () => {
 
   const updateModule = async () => {
     try {
-      const response = await fetch(`https://backend.gspl.cloud/api/master/module/${editModule.id}`, {
+      const response = await fetch(getApiUrl(`master/module/${editModule.id}`), {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editModule)

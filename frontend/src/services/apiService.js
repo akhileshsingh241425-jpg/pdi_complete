@@ -5,6 +5,24 @@ import axios from 'axios';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5000/api';
 
+/**
+ * Get the full API URL for fetch requests
+ * @param {string} path - API endpoint path (e.g., '/master/orders')
+ * @returns {string} Full API URL
+ */
+export const getApiUrl = (path) => {
+  // Remove leading slash if present to avoid double slashes
+  const cleanPath = path.startsWith('/') ? path.substring(1) : path;
+  
+  // If API_BASE_URL is relative (starts with /), use it directly
+  if (API_BASE_URL.startsWith('/')) {
+    return `${API_BASE_URL}/${cleanPath}`;
+  }
+  
+  // Otherwise use the full URL
+  return `${API_BASE_URL}/${cleanPath}`;
+};
+
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {

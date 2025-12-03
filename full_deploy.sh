@@ -28,13 +28,13 @@ pip install -q -r requirements.txt
 echo "✅ Dependencies installed"
 echo ""
 
-# Step 3: Setup COC database tables
-echo "📊 Step 3: Setting up COC database tables..."
-python create_coc_tables.py
+# Step 3: Initialize ALL database tables
+echo "📊 Step 3: Initializing database tables..."
+python init_all_tables.py
 if [ $? -eq 0 ]; then
     echo "✅ Database tables created/verified"
 else
-    echo "⚠️  Database setup had warnings (tables may already exist)"
+    echo "⚠️  Database setup had warnings (check output above)"
 fi
 cd ..
 echo ""

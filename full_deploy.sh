@@ -20,10 +20,16 @@ fi
 echo "✅ Code updated"
 echo ""
 
-# Step 2: Setup COC database tables
-echo "📊 Step 2: Setting up COC database tables..."
+# Step 2: Install/Update Python dependencies
+echo "� Step 2: Installing Python dependencies..."
 cd backend
 source venv/bin/activate
+pip install -q -r requirements.txt
+echo "✅ Dependencies installed"
+echo ""
+
+# Step 3: Setup COC database tables
+echo "📊 Step 3: Setting up COC database tables..."
 python create_coc_tables.py
 if [ $? -eq 0 ]; then
     echo "✅ Database tables created/verified"
@@ -33,8 +39,8 @@ fi
 cd ..
 echo ""
 
-# Step 3: Rebuild frontend
-echo "🔨 Step 3: Rebuilding frontend..."
+# Step 4: Rebuild frontend
+echo "🔨 Step 4: Rebuilding frontend..."
 cd frontend
 cp .env.production .env 2>/dev/null || echo "REACT_APP_API_URL=/api" > .env
 rm -rf build/
@@ -47,8 +53,8 @@ echo "✅ Frontend built"
 cd ..
 echo ""
 
-# Step 4: Restart backend
-echo "🚀 Step 4: Restarting backend..."
+# Step 5: Restart backend
+echo "🚀 Step 5: Restarting backend..."
 pkill -f "python run.py" 2>/dev/null && echo "  Stopped old backend"
 sleep 1
 
@@ -68,8 +74,8 @@ fi
 cd ..
 echo ""
 
-# Step 5: Test COC endpoints
-echo "🧪 Step 5: Testing COC endpoints..."
+# Step 6: Test COC endpoints
+echo "🧪 Step 6: Testing COC endpoints..."
 if curl -s http://localhost:5002/api/coc/companies > /dev/null 2>&1; then
     echo "✅ COC companies endpoint working"
 else
@@ -77,8 +83,8 @@ else
 fi
 echo ""
 
-# Step 6: Test frontend
-echo "🌐 Step 6: Testing frontend..."
+# Step 7: Test frontend
+echo "🌐 Step 7: Testing frontend..."
 if curl -s -I http://pdi.gspl.cloud:4000 | grep -q "200 OK"; then
     echo "✅ Frontend is accessible"
 else

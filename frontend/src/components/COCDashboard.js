@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import PasswordModal from './PasswordModal';
+import { getApiUrl } from '../services/apiService';
 import '../styles/COCDashboard.css';
 
-const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || 'http://localhost:5002';
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
 
 function COCDashboard() {
   // Get current month's first and last date
@@ -57,7 +58,7 @@ function COCDashboard() {
 
   const loadCompanies = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/coc/companies`);
+      const response = await axios.get(`${API_BASE_URL}/coc/companies`);
       if (response.data.success) {
         setCompanies(response.data.data);
         if (response.data.data.length > 0) {
@@ -78,7 +79,7 @@ function COCDashboard() {
         to_date: toDate || undefined
       };
       
-      const response = await axios.get(`${API_BASE_URL}/api/coc/list`, { params });
+      const response = await axios.get(`${API_BASE_URL}/coc/list`, { params });
       if (response.data.success) {
         setCocData(response.data.data);
         setFilteredCocData(response.data.data);
@@ -108,7 +109,7 @@ function COCDashboard() {
 
   const loadStockData = async () => {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/coc/stock`, {
+      const response = await axios.get(`${API_BASE_URL}/coc/stock`, {
         params: { company: selectedCompany || undefined }
       });
       if (response.data.success) {
@@ -167,7 +168,7 @@ function COCDashboard() {
     setSyncing(true);
     setMessage('');
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/coc/sync`, {
+      const response = await axios.post(`${API_BASE_URL}/coc/sync`, {
         from_date: fromDate,
         to_date: toDate
       });
@@ -193,7 +194,7 @@ function COCDashboard() {
 
     try {
       const response = await axios.post(
-        `${API_BASE_URL}/api/generate-consolidated-report`,
+        `${API_BASE_URL}/generate-consolidated-report`,
         {
           company_name: selectedCompany,
           from_date: '2025-11-01',

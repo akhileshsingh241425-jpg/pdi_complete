@@ -3,6 +3,8 @@ import axios from 'axios';
 import { MATERIAL_REQUIREMENTS, calculateMaterialRequirements } from '../constants/materialRequirements';
 import '../styles/COCSelectionModal.css';
 
+const API_BASE_URL = process.env.REACT_APP_API_URL || '/api';
+
 const COCSelectionModal = ({ 
   isOpen, 
   onClose, 
@@ -30,7 +32,7 @@ const COCSelectionModal = ({
   const fetchAvailableCOCs = async () => {
     try {
       setLoading(true);
-      const response = await axios.get('http://localhost:5002/api/coc/list', {
+      const response = await axios.get(`${API_BASE_URL}/coc/list`, {
         params: {
           company_id: companyId // Filter by company if needed
         }

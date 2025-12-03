@@ -40,22 +40,53 @@ class ProductionRecord(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     company_id = db.Column(db.Integer, db.ForeignKey('companies.id'), nullable=False)
     date = db.Column(db.Date, nullable=False)
+    lot_number = db.Column(db.String(200), nullable=False, unique=True)  # Mandatory and unique lot number
     day_production = db.Column(db.Integer, default=0)
     night_production = db.Column(db.Integer, default=0)
     pdi = db.Column(db.String(200), default='')
     cell_rejection_percent = db.Column(db.Float, default=0.0)
     module_rejection_percent = db.Column(db.Float, default=0.0)
+    ipqc_pdf = db.Column(db.String(500), nullable=True)  # IPQC PDF upload for that day
+    ftr_document = db.Column(db.String(500), nullable=True)  # FTR document upload for that day
+    is_closed = db.Column(db.Boolean, default=False)  # Piece sheet closed/locked
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    # Relationship to BOM materials
+    bom_materials = db.relationship('BomMaterial', backref='production_record', lazy=True, cascade='all, delete-orphan')
     
     def to_dict(self):
         return {
             'id': self.id,
             'date': self.date.strftime('%Y-%m-%d') if self.date else None,
+            'lotNumber': self.lot_number,
             'dayProduction': self.day_production,
             'nightProduction': self.night_production,
             'pdi': self.pdi,
             'cellRejectionPercent': self.cell_rejection_percent,
-            'moduleRejectionPercent': self.module_rejection_percent
+            'moduleRejectionPercent': self.module_rejection_percent,
+            'ipqcPdf': self.ipqc_pdf,
+            'ftrDocument': self.ftr_document,
+            'isClosed': self.is_closed,
+            'bomMaterials': [bm.to_dict() for bm in self.bom_materials]
+        }
+
+
+class BomMaterial(db.Model):
+    __tablename__ = 'bom_materials'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    production_record_id = db.Column(db.Integer, db.ForeignKey('production_records.id'), nullable=False)
+    material_name = db.Column(db.String(100), nullable=False)  # Cell, EVA Front, EVA Back, etc.
+    image_path = db.Column(db.String(500), nullable=True)
+    lot_number = db.Column(db.String(200), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'materialName': self.material_name,
+            'imagePath': self.image_path,
+            'lotNumber': self.lot_number
         }
 
 

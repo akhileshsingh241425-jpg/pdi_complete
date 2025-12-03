@@ -1,6 +1,7 @@
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
+from openpyxl.drawing.image import Image as XLImage
 from datetime import datetime
 import os
 import json
@@ -16,7 +17,8 @@ def generate_production_excel(company, production_data, rejections, start_date, 
             'includeCellInventory': True,
             'includeKPIMetrics': True,
             'includeDayWiseSummary': True,
-            'includeRejections': True
+            'includeRejections': True,
+            'includeBomMaterials': True
         }
     
     wb = Workbook()
@@ -48,6 +50,10 @@ def generate_production_excel(company, production_data, rejections, start_date, 
     # Sheet 6: Detailed Rejections
     if report_options.get('includeRejections', True):
         create_rejection_details_sheet(wb, rejections)
+    
+    # Sheet 7: BOM Materials & Documents
+    if report_options.get('includeBomMaterials', True):
+        create_bom_materials_sheet(wb, production_data)
     
     # Save file
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -548,6 +554,194 @@ def create_rejection_details_sheet(wb, rejections):
     
     for row in ws.iter_rows(min_row=3, max_row=len(rejections)+3, min_col=1, max_col=7):
         for cell in row:
+            cell.border = thin_border
+
+def create_bom_materials_sheet(wb, production_data):
+    """Sheet 7: BOM Materials & Documents"""
+    ws = wb.create_sheet("BOM Materials & Documents")
+    
+    # Title
+    ws.merge_cells('A1:F1')
+    ws['A1'] = "📦 BOM MATERIALS & DOCUMENTS SUMMARY"
+    ws['A1'].font = Font(name='Calibri', size=16, bold=True, color="FFFFFF")
+    ws['A1'].fill = PatternFill(start_color="1976D2", end_color="1976D2", fill_type="solid")
+    ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
+    ws.row_dimensions[1].height = 30
+    
+    row = 3
+    
+    # Process each production record
+    for record in production_data:
+        date = record.get('date', 'N/A')
+        lot_number = record.get('lot_number', 'N/A')
+        bom_materials = record.get('bom_materials', [])
+        ipqc_pdf = record.get('ipqc_pdf')
+        ftr_document = record.get('ftr_document')
+        
+        # Date and Lot Number Header
+        ws.merge_cells(f'A{row}:F{row}')
+        ws[f'A{row}'] = f"📅 Date: {date} | 🏷️ Lot Number: {lot_number}"
+        ws[f'A{row}'].font = Font(name='Calibri', size=12, bold=True, color="FFFFFF")
+        ws[f'A{row}'].fill = PatternFill(start_color="0D47A1", end_color="0D47A1", fill_type="solid")
+        ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='center')
+        ws.row_dimensions[row].height = 25
+        row += 1
+        
+        # BOM Materials Table Header
+        headers = ['Sr.', 'Material Name', 'Lot Number', 'Image']
+        header_fill = PatternFill(start_color="64B5F6", end_color="64B5F6", fill_type="solid")
+        header_font = Font(name='Calibri', size=10, bold=True, color="FFFFFF")
+        
+        for col, header in enumerate(headers, 1):
+            cell = ws.cell(row=row, column=col, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal='center', vertical='center')
+        ws.row_dimensions[row].height = 20
+        row += 1
+        
+        # BOM Materials Data
+        light_fill = PatternFill(start_color="E3F2FD", end_color="E3F2FD", fill_type="solid")
+        green_fill = PatternFill(start_color="C8E6C9", end_color="C8E6C9", fill_type="solid")
+        red_fill = PatternFill(start_color="FFCDD2", end_color="FFCDD2", fill_type="solid")
+        
+        if not bom_materials or len(bom_materials) == 0:
+            # No BOM materials - show message
+            ws.merge_cells(f'A{row}:F{row}')
+            ws[f'A{row}'] = "No BOM materials uploaded yet for this date"
+            ws[f'A{row}'].font = Font(name='Calibri', size=10, italic=True)
+            ws[f'A{row}'].alignment = Alignment(horizontal='center', vertical='center')
+            ws[f'A{row}'].fill = PatternFill(start_color="FFF9C4", end_color="FFF9C4", fill_type="solid")
+            row += 1
+        
+        for idx, material in enumerate(bom_materials, 1):
+            material_name = material.get('materialName', material.get('material_name', 'N/A'))
+            material_lot = material.get('lotNumber', material.get('lot_number', 'N/A'))
+            image_path = material.get('imagePath', material.get('image_path', ''))
+            
+            # Set row height for images (80 pixels = ~60 points)
+            ws.row_dimensions[row].height = 80
+            
+            ws.cell(row=row, column=1, value=idx).alignment = Alignment(horizontal='center', vertical='center')
+            ws.cell(row=row, column=2, value=material_name).alignment = Alignment(horizontal='left', vertical='center')
+            ws.cell(row=row, column=3, value=material_lot).alignment = Alignment(horizontal='left', vertical='center')
+            
+            # Try to embed actual image in column D (4)
+            if image_path:
+                try:
+                    # Construct full path
+                    if not os.path.isabs(image_path):
+                        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                        full_path = os.path.join(backend_dir, image_path)
+                    else:
+                        full_path = image_path
+                    
+                    if os.path.exists(full_path):
+                        # Add image to Excel
+                        img = XLImage(full_path)
+                        # Resize image to fit cell (width: 100px, height: 75px)
+                        img.width = 100
+                        img.height = 75
+                        # Anchor image to cell D (column 4)
+                        img.anchor = f'D{row}'
+                        ws.add_image(img)
+                        ws.cell(row=row, column=4, value='').fill = green_fill
+                    else:
+                        ws.cell(row=row, column=4, value='✗ Not Found').alignment = Alignment(horizontal='center', vertical='center')
+                        ws.cell(row=row, column=4).fill = red_fill
+                except Exception as e:
+                    print(f"ERROR embedding image in Excel for {material_name}: {str(e)}")
+                    ws.cell(row=row, column=4, value='✗ Error').alignment = Alignment(horizontal='center', vertical='center')
+                    ws.cell(row=row, column=4).fill = red_fill
+            else:
+                ws.cell(row=row, column=4, value='✗ No Image').alignment = Alignment(horizontal='center', vertical='center')
+                ws.cell(row=row, column=4).fill = red_fill
+            
+            # Alternate row colors for other columns
+            if idx % 2 == 0:
+                for col in [1, 2, 3]:
+                    ws.cell(row=row, column=col).fill = light_fill
+            
+            # Font styling
+            for col in range(1, 5):
+                ws.cell(row=row, column=col).font = Font(name='Calibri', size=9)
+            
+            row += 1
+        
+        # Documents Section with file info
+        ws.merge_cells(f'A{row}:D{row}')
+        ws[f'A{row}'] = "📄 SUPPORTING DOCUMENTS"
+        ws[f'A{row}'].font = Font(name='Calibri', size=11, bold=True, color="FFFFFF")
+        ws[f'A{row}'].fill = PatternFill(start_color="7B1FA2", end_color="7B1FA2", fill_type="solid")
+        ws[f'A{row}'].alignment = Alignment(horizontal='left', vertical='center')
+        ws.row_dimensions[row].height = 20
+        row += 1
+        
+        # Document headers
+        ws.cell(row=row, column=1, value='Document Type').font = Font(name='Calibri', size=10, bold=True)
+        ws.cell(row=row, column=1).fill = PatternFill(start_color="E1BEE7", end_color="E1BEE7", fill_type="solid")
+        ws.cell(row=row, column=2, value='Status').font = Font(name='Calibri', size=10, bold=True)
+        ws.cell(row=row, column=2).fill = PatternFill(start_color="E1BEE7", end_color="E1BEE7", fill_type="solid")
+        ws.merge_cells(f'C{row}:D{row}')
+        ws.cell(row=row, column=3, value='File Name').font = Font(name='Calibri', size=10, bold=True)
+        ws.cell(row=row, column=3).fill = PatternFill(start_color="E1BEE7", end_color="E1BEE7", fill_type="solid")
+        row += 1
+        
+        # IPQC PDF row
+        ws.cell(row=row, column=1, value='📋 IPQC PDF').font = Font(name='Calibri', size=10)
+        ws.cell(row=row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+        
+        if ipqc_pdf:
+            ipqc_filename = os.path.basename(ipqc_pdf)
+            ws.cell(row=row, column=2, value='✓ Uploaded').fill = green_fill
+            ws.merge_cells(f'C{row}:D{row}')
+            ws.cell(row=row, column=3, value=ipqc_filename)
+        else:
+            ws.cell(row=row, column=2, value='✗ Not Uploaded').fill = red_fill
+            ws.merge_cells(f'C{row}:D{row}')
+            ws.cell(row=row, column=3, value='-')
+        
+        ws.cell(row=row, column=2).alignment = Alignment(horizontal='center', vertical='center')
+        ws.cell(row=row, column=3).alignment = Alignment(horizontal='left', vertical='center')
+        row += 1
+        
+        # FTR Document row
+        ws.cell(row=row, column=1, value='� FTR Document').font = Font(name='Calibri', size=10)
+        ws.cell(row=row, column=1).alignment = Alignment(horizontal='left', vertical='center')
+        
+        if ftr_document:
+            ftr_filename = os.path.basename(ftr_document)
+            ws.cell(row=row, column=2, value='✓ Uploaded').fill = green_fill
+            ws.merge_cells(f'C{row}:D{row}')
+            ws.cell(row=row, column=3, value=ftr_filename)
+        else:
+            ws.cell(row=row, column=2, value='✗ Not Uploaded').fill = red_fill
+            ws.merge_cells(f'C{row}:D{row}')
+            ws.cell(row=row, column=3, value='-')
+        
+        ws.cell(row=row, column=2).alignment = Alignment(horizontal='center', vertical='center')
+        ws.cell(row=row, column=3).alignment = Alignment(horizontal='left', vertical='center')
+        row += 1
+        
+        # Spacing between records
+        row += 2
+    
+    # Set column widths (4 columns for BOM section)
+    ws.column_dimensions['A'].width = 8    # Sr.
+    ws.column_dimensions['B'].width = 25   # Material Name
+    ws.column_dimensions['C'].width = 20   # Lot Number / File Name
+    ws.column_dimensions['D'].width = 18   # Image (wider for embedded images)
+    
+    # Add borders to all cells
+    thin_border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    for row_cells in ws.iter_rows(min_row=1, max_row=row-1, min_col=1, max_col=4):
+        for cell in row_cells:
             cell.border = thin_border
 
 def generate_ipqc_excel(ipqc_data, bom_data, metadata):

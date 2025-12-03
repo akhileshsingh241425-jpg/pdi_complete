@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from urllib.parse import quote_plus
 
 # Load environment variables from .env file
 load_dotenv()
@@ -11,8 +12,11 @@ class Config:
     MYSQL_PASSWORD = os.getenv('MYSQL_PASSWORD', 'root')
     MYSQL_DB = os.getenv('MYSQL_DB', 'pdi_database')
     
+    # URL encode password to handle special characters
+    ENCODED_PASSWORD = quote_plus(MYSQL_PASSWORD)
+    
     SQLALCHEMY_DATABASE_URI = os.getenv('DATABASE_URL') or \
-        f'mysql+pymysql://{MYSQL_USER}:{MYSQL_PASSWORD}@{MYSQL_HOST}/{MYSQL_DB}'
+        f'mysql+pymysql://{MYSQL_USER}:{ENCODED_PASSWORD}@{MYSQL_HOST}/{MYSQL_DB}'
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     
     # Secret key for session management

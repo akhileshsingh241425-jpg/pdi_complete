@@ -12,7 +12,7 @@ def create_app():
     frontend_url = 'https://pdi.gspl.cloud'  # Hardcoded for production
     CORS(app, resources={
         r"/api/*": {
-            "origins": [frontend_url, "http://localhost:3000", "http://localhost:3001"],
+            "origins": [frontend_url, "http://pdi.gspl.cloud:4000", "http://localhost:3000", "http://localhost:3001"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization"]
         }
@@ -41,11 +41,18 @@ def create_app():
     from app.routes.company_routes import company_bp
     from app.routes.peel_test_routes import peel_test_bp
     from app.routes.master_routes import master_bp
+    from app.routes.coc_routes import coc_bp
+    from app.routes.production_validation_routes import production_validation_bp
+    from app.routes.auth_routes import auth_bp
+    
     app.register_blueprint(ipqc_bp, url_prefix='/api')
     app.register_blueprint(production_bp)
     app.register_blueprint(company_bp)
     app.register_blueprint(peel_test_bp, url_prefix='/api/peel-test')
     app.register_blueprint(master_bp)
+    app.register_blueprint(coc_bp, url_prefix='/api/coc')
+    app.register_blueprint(production_validation_bp, url_prefix='/api')
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
     
     # Serve React frontend
     @app.route('/', defaults={'path': ''})

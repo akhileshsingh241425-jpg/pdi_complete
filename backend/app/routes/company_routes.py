@@ -1,8 +1,16 @@
 from flask import Blueprint, request, jsonify
 from datetime import datetime
-from app.models.database import db, Company, ProductionRecord, RejectedModule
+from app.models.database import db, Company, ProductionRecord, RejectedModule, BomMaterial
 
 company_bp = Blueprint('company', __name__)
+
+# BOM Materials list
+BOM_MATERIALS = [
+    "Cell", "EVA Front", "EVA Back", "Glass Front", "Glass Back",
+    "Ribbon", "Frame Long", "Frame Short", "JB", "Flux",
+    "Potting Material", "Bus Bar 6mm", "Bus Bar 4mm",
+    "Silicone 2kg", "Silicone 10kg", "Silicone 270kg"
+]
 
 # Get all companies
 @company_bp.route('/api/companies', methods=['GET'])
@@ -86,20 +94,75 @@ def add_production_record(company_id):
         company = Company.query.get_or_404(company_id)
         data = request.get_json()
         
+        # Validate lot number
+        lot_number = data.get('lotNumber', '').strip()
+        if not lot_number:
+            return jsonify({'error': 'Lot number is mandatory'}), 400
+        
+        # Check if lot number already exists
+        existing = ProductionRecord.query.filter_by(lot_number=lot_number).first()
+        if existing:
+            return jsonify({'error': f'Lot number "{lot_number}" already exists'}), 400
+        
+        # Get total production quantity
+        total_production = int(data.get('dayProduction', 0)) + int(data.get('nightProduction', 0))
+        
+        # Validate raw material availability before production entry
+        from app.services.coc_service import COCService
+        material_requirements = {
+            'Solar Cell': total_production * company.cells_per_module,
+            'Glass': total_production * 2,  # Front + Back
+            'Aluminium Frame': total_production * 4,  # 4 pieces per module
+            'Ribbon': total_production * 0.5,  # Approximate
+            'EPE': total_production * 2  # Packaging
+        }
+        
+        validation = COCService.validate_production(company.company_name, material_requirements)
+        if not validation.get('valid'):
+            return jsonify({
+                'error': 'Insufficient raw material for production',
+                'message': 'Production cannot proceed due to insufficient raw materials',
+                'details': validation.get('insufficient', []),
+                'required_materials': material_requirements
+            }), 400
+        
         record = ProductionRecord(
             company_id=company_id,
             date=datetime.strptime(data.get('date'), '%Y-%m-%d').date(),
+            lot_number=lot_number,
             day_production=int(data.get('dayProduction', 0)),
             night_production=int(data.get('nightProduction', 0)),
             pdi=data.get('pdi', ''),
             cell_rejection_percent=float(data.get('cellRejectionPercent', 0.0)),
-            module_rejection_percent=float(data.get('moduleRejectionPercent', 0.0))
+            module_rejection_percent=float(data.get('moduleRejectionPercent', 0.0)),
+            is_closed=False
         )
         
         db.session.add(record)
         db.session.commit()
         
-        return jsonify(record.to_dict()), 201
+        # Auto-consume materials after successful production entry
+        from app.services.coc_service import COCService
+        for material_name, quantity in material_requirements.items():
+            COCService.consume_material(
+                company.company_name,
+                material_name,
+                quantity,
+                record.date,
+                lot_number
+            )
+        
+        # Initialize BOM materials for this record
+        for material_name in BOM_MATERIALS:
+            bom_material = BomMaterial(
+                production_record_id=record.id,
+                material_name=material_name
+            )
+            db.session.add(bom_material)
+        
+        db.session.commit()
+        
+        return jsonify({'record': record.to_dict()}), 201
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500
@@ -109,6 +172,11 @@ def add_production_record(company_id):
 def update_production_record(company_id, record_id):
     try:
         record = ProductionRecord.query.filter_by(id=record_id, company_id=company_id).first_or_404()
+        
+        # Check if record is closed/locked
+        if record.is_closed:
+            return jsonify({'error': 'This production record is closed and cannot be edited'}), 403
+        
         data = request.get_json()
         
         if data.get('date'):
@@ -118,6 +186,12 @@ def update_production_record(company_id, record_id):
         record.pdi = data.get('pdi', record.pdi)
         record.cell_rejection_percent = float(data.get('cellRejectionPercent', record.cell_rejection_percent))
         record.module_rejection_percent = float(data.get('moduleRejectionPercent', record.module_rejection_percent))
+        
+        # Update new fields
+        if 'lotNumber' in data:
+            record.lot_number = data.get('lotNumber')
+        if 'bomImage' in data:
+            record.bom_image = data.get('bomImage')
         
         db.session.commit()
         
@@ -211,6 +285,218 @@ def delete_all_rejections(company_id):
         db.session.commit()
         
         return jsonify({'message': 'All rejections deleted successfully'}), 200
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Upload BOM material image and lot number
+@company_bp.route('/api/companies/<int:company_id>/production/<int:record_id>/bom-material', methods=['POST'])
+def upload_bom_material(company_id, record_id):
+    try:
+        from flask import current_app
+        from werkzeug.utils import secure_filename
+        import os
+        
+        record = ProductionRecord.query.filter_by(id=record_id, company_id=company_id).first_or_404()
+        
+        # Check if record is closed
+        if record.is_closed:
+            return jsonify({'error': 'This production record is closed'}), 403
+        
+        material_name = request.form.get('materialName')
+        lot_number = request.form.get('lotNumber', '')
+        
+        if not material_name or material_name not in BOM_MATERIALS:
+            return jsonify({'error': 'Invalid material name'}), 400
+        
+        # Find or create BOM material record
+        bom_material = BomMaterial.query.filter_by(
+            production_record_id=record_id,
+            material_name=material_name
+        ).first()
+        
+        if not bom_material:
+            bom_material = BomMaterial(
+                production_record_id=record_id,
+                material_name=material_name
+            )
+            db.session.add(bom_material)
+        
+        # Update lot number
+        bom_material.lot_number = lot_number
+        
+        # Handle image upload if provided
+        if 'image' in request.files:
+            file = request.files['image']
+            
+            if file.filename != '':
+                # Allowed extensions
+                ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'pdf'}
+                if '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS:
+                    # Create uploads/bom_materials directory
+                    upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'bom_materials')
+                    os.makedirs(upload_folder, exist_ok=True)
+                    
+                    # Generate unique filename
+                    safe_material_name = material_name.replace(' ', '_').lower()
+                    filename = secure_filename(
+                        f"{company_id}_{record_id}_{safe_material_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{file.filename.rsplit('.', 1)[1].lower()}"
+                    )
+                    filepath = os.path.join(upload_folder, filename)
+                    
+                    # Save file
+                    file.save(filepath)
+                    
+                    # Update record - store relative path from backend directory
+                    bom_material.image_path = f"uploads/bom_materials/{filename}"
+        
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'BOM material updated successfully',
+            'bomMaterial': bom_material.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Upload IPQC PDF for production record
+@company_bp.route('/api/companies/<int:company_id>/production/<int:record_id>/ipqc-pdf', methods=['POST'])
+def upload_ipqc_pdf(company_id, record_id):
+    try:
+        from flask import current_app
+        from werkzeug.utils import secure_filename
+        import os
+        
+        record = ProductionRecord.query.filter_by(id=record_id, company_id=company_id).first_or_404()
+        
+        # Check if record is closed
+        if record.is_closed:
+            return jsonify({'error': 'This production record is closed'}), 403
+        
+        if 'pdf' not in request.files:
+            return jsonify({'error': 'No PDF file provided'}), 400
+        
+        file = request.files['pdf']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        # Check file extension
+        if not (file.filename.lower().endswith('.pdf')):
+            return jsonify({'error': 'Only PDF files are allowed'}), 400
+        
+        # Create uploads/ipqc_pdfs directory
+        upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'ipqc_pdfs')
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        # Generate unique filename
+        filename = secure_filename(f"{company_id}_{record_id}_ipqc_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+        filepath = os.path.join(upload_folder, filename)
+        
+        # Save file
+        file.save(filepath)
+        
+        # Update record - store relative path from backend directory
+        record.ipqc_pdf = f"uploads/ipqc_pdfs/{filename}"
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'IPQC PDF uploaded successfully',
+            'ipqcPdf': record.ipqc_pdf
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Upload FTR document for production record
+@company_bp.route('/api/companies/<int:company_id>/production/<int:record_id>/ftr-document', methods=['POST'])
+def upload_ftr_document(company_id, record_id):
+    try:
+        from flask import current_app
+        from werkzeug.utils import secure_filename
+        import os
+        
+        record = ProductionRecord.query.filter_by(id=record_id, company_id=company_id).first_or_404()
+        
+        # Check if record is closed
+        if record.is_closed:
+            return jsonify({'error': 'This production record is closed'}), 403
+        
+        if 'document' not in request.files:
+            return jsonify({'error': 'No document file provided'}), 400
+        
+        file = request.files['document']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No selected file'}), 400
+        
+        # Allowed extensions for FTR
+        ALLOWED_EXTENSIONS = {'pdf', 'xlsx', 'xls', 'doc', 'docx'}
+        if not ('.' in file.filename and file.filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS):
+            return jsonify({'error': 'Invalid file type'}), 400
+        
+        # Create uploads/ftr_documents directory
+        upload_folder = os.path.join(current_app.config['UPLOAD_FOLDER'], 'ftr_documents')
+        os.makedirs(upload_folder, exist_ok=True)
+        
+        # Generate unique filename
+        ext = file.filename.rsplit('.', 1)[1].lower()
+        filename = secure_filename(f"{company_id}_{record_id}_ftr_{datetime.now().strftime('%Y%m%d_%H%M%S')}.{ext}")
+        filepath = os.path.join(upload_folder, filename)
+        
+        # Save file
+        file.save(filepath)
+        
+        # Update record - store relative path from backend directory
+        record.ftr_document = f"uploads/ftr_documents/{filename}"
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'FTR document uploaded successfully',
+            'ftrDocument': record.ftr_document
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Close/Lock production record (after PDF generation)
+@company_bp.route('/api/companies/<int:company_id>/production/<int:record_id>/close', methods=['POST'])
+def close_production_record(company_id, record_id):
+    try:
+        record = ProductionRecord.query.filter_by(id=record_id, company_id=company_id).first_or_404()
+        
+        # Mark as closed
+        record.is_closed = True
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Production record closed successfully',
+            'record': record.to_dict()
+        }), 200
+        
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': str(e)}), 500
+
+# Reopen production record (admin function)
+@company_bp.route('/api/companies/<int:company_id>/production/<int:record_id>/reopen', methods=['POST'])
+def reopen_production_record(company_id, record_id):
+    try:
+        record = ProductionRecord.query.filter_by(id=record_id, company_id=company_id).first_or_404()
+        
+        # Mark as open
+        record.is_closed = False
+        db.session.commit()
+        
+        return jsonify({
+            'message': 'Production record reopened successfully',
+            'record': record.to_dict()
+        }), 200
+        
     except Exception as e:
         db.session.rollback()
         return jsonify({'error': str(e)}), 500

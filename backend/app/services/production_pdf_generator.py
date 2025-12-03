@@ -6,6 +6,14 @@ from reportlab.lib.units import mm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from io import BytesIO
 from datetime import datetime
+import os
+
+# Optional PDF merging support
+try:
+    from PyPDF2 import PdfReader, PdfWriter
+    HAS_PYPDF2 = True
+except ImportError:
+    HAS_PYPDF2 = False
 
 class ProductionPDFGenerator:
     def __init__(self):
@@ -601,6 +609,184 @@ class ProductionPDFGenerator:
                 story.append(reject_table)
                 story.append(Spacer(1, 10))
         
+        # BOM Materials & Documents Section
+        if report_options.get('includeBomMaterials', True):
+            story.append(Spacer(1, 18))
+            story.append(Paragraph("📦 BOM MATERIALS & DOCUMENTS SUMMARY", self.styles['SectionHeader']))
+            story.append(Spacer(1, 8))
+            
+            # Group production records by date with BOM info
+            for record in production_records:
+                if start_date and end_date:
+                    if not (start_date <= record.get('date', '') <= end_date):
+                        continue
+                
+                date = record.get('date', 'N/A')
+                lot_number = record.get('lot_number', 'N/A')
+                bom_materials = record.get('bom_materials', [])
+                ipqc_pdf = record.get('ipqc_pdf', None)
+                ftr_document = record.get('ftr_document', None)
+                
+                # Debug logging
+                print(f"DEBUG: Processing record for date={date}, lot_number={lot_number}")
+                print(f"DEBUG: BOM materials count: {len(bom_materials)}")
+                if bom_materials:
+                    print(f"DEBUG: First BOM material keys: {list(bom_materials[0].keys())}")
+                
+                # Date header
+                date_header_style = ParagraphStyle(
+                    'DateHeader',
+                    parent=self.styles['Normal'],
+                    fontSize=11,
+                    textColor=colors.HexColor('#1976d2'),
+                    fontName='Helvetica-Bold',
+                    spaceBefore=8,
+                    spaceAfter=4
+                )
+                story.append(Paragraph(f"📅 Date: {date} | Lot Number: {lot_number}", date_header_style))
+                
+                # BOM Materials in TWO COLUMN layout - left and right side
+                if bom_materials and len(bom_materials) > 0:
+                    import os
+                    
+                    # Process all BOM materials
+                    processed_materials = []
+                    for bom in bom_materials:
+                        material_name = bom.get('materialName', bom.get('material_name', 'N/A'))
+                        material_lot = bom.get('lotNumber', bom.get('lot_number', '-'))
+                        image_path = bom.get('imagePath', bom.get('image_path'))
+                        
+                        # Try to embed actual image
+                        print(f"🔍 Processing {material_name}: imagePath={image_path}")
+                        img_element = None
+                        if image_path:
+                            try:
+                                # Construct full path relative to backend directory
+                                if not os.path.isabs(image_path):
+                                    backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+                                    full_path = os.path.join(backend_dir, image_path)
+                                else:
+                                    full_path = image_path
+                                
+                                print(f"   Full path: {full_path}")
+                                print(f"   File exists: {os.path.exists(full_path)}")
+                                
+                                if os.path.exists(full_path):
+                                    # Very small images for 2-column layout
+                                    img_element = Image(full_path, width=18*mm, height=18*mm)
+                                    print(f"   ✓ Image embedded successfully")
+                                else:
+                                    print(f"   ✗ WARNING: Image not found at {full_path}")
+                                    img_element = '✗ Not Found'
+                            except Exception as e:
+                                print(f"   ✗ ERROR embedding image for {material_name}: {str(e)}")
+                                import traceback
+                                traceback.print_exc()
+                                img_element = '✗ Error'
+                        else:
+                            print(f"   ✗ No image path provided")
+                            img_element = '✗ No Image'
+                        
+                        processed_materials.append([material_name, material_lot, img_element])
+                    
+                    # Split into two columns: left half and right half
+                    mid_point = (len(processed_materials) + 1) // 2
+                    left_materials = processed_materials[:mid_point]
+                    right_materials = processed_materials[mid_point:]
+                    
+                    # Create left table
+                    left_data = [['Material Name', 'Lot #', 'Image']] + left_materials
+                    left_table = Table(left_data, colWidths=[40*mm, 28*mm, 20*mm], rowHeights=22)
+                    left_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4CAF50')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('ALIGN', (0, 1), (1, -1), 'LEFT'),
+                        ('ALIGN', (2, 1), (2, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 6),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f1f8e9')]),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('TOPPADDING', (0, 0), (-1, -1), 1),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                    ]))
+                    
+                    # Create right table
+                    right_data = [['Material Name', 'Lot #', 'Image']] + right_materials
+                    right_table = Table(right_data, colWidths=[40*mm, 28*mm, 20*mm], rowHeights=22)
+                    right_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4CAF50')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                        ('ALIGN', (0, 1), (1, -1), 'LEFT'),
+                        ('ALIGN', (2, 1), (2, -1), 'CENTER'),
+                        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                        ('FONTSIZE', (0, 0), (-1, -1), 6),
+                        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f1f8e9')]),
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('TOPPADDING', (0, 0), (-1, -1), 1),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                    ]))
+                    
+                    # Combine both tables side by side
+                    two_column_table = Table([[left_table, right_table]], colWidths=[93*mm, 93*mm])
+                    two_column_table.setStyle(TableStyle([
+                        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                        ('TOPPADDING', (0, 0), (-1, -1), 0),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                    ]))
+                    
+                    story.append(two_column_table)
+                    story.append(Spacer(1, 2))
+                else:
+                    # No BOM materials uploaded yet
+                    story.append(Paragraph("<i>No BOM materials uploaded yet for this date.</i>", self.styles['Normal']))
+                    story.append(Spacer(1, 4))
+                
+                # Supporting Documents Section with clickable file paths
+                story.append(Paragraph("📄 SUPPORTING DOCUMENTS", date_header_style))
+                
+                # Create links for documents
+                if ipqc_pdf:
+                    ipqc_filename = os.path.basename(ipqc_pdf) if ipqc_pdf else 'N/A'
+                    ipqc_full_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ipqc_pdf)
+                    ipqc_link = f'<link href="file:///{ipqc_full_path}" color="blue"><u>📄 {ipqc_filename}</u></link>'
+                    story.append(Paragraph(f"<b>IPQC PDF:</b> ✓ Uploaded - {ipqc_link}", self.styles['Normal']))
+                else:
+                    story.append(Paragraph("<b>IPQC PDF:</b> ✗ Not Uploaded", self.styles['Normal']))
+                
+                story.append(Spacer(1, 2))
+                
+                if ftr_document:
+                    ftr_filename = os.path.basename(ftr_document) if ftr_document else 'N/A'
+                    ftr_full_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ftr_document)
+                    ftr_link = f'<link href="file:///{ftr_full_path}" color="blue"><u>📑 {ftr_filename}</u></link>'
+                    story.append(Paragraph(f"<b>FTR Document:</b> ✓ Uploaded - {ftr_link}", self.styles['Normal']))
+                else:
+                    story.append(Paragraph("<b>FTR Document:</b> ✗ Not Uploaded", self.styles['Normal']))
+                
+                # Note about documents
+                if ipqc_pdf or ftr_document:
+                    note_style = ParagraphStyle(
+                        'Note',
+                        parent=self.styles['Normal'],
+                        fontSize=8,
+                        textColor=colors.grey,
+                        spaceAfter=4
+                    )
+                    story.append(Spacer(1, 4))
+                    story.append(Paragraph("<i>Note: Click on the blue links above to open the documents. Files are stored in the uploads folder.</i>", note_style))
+                
+                story.append(Spacer(1, 10))
+        
         # Remarks Section
         remarks = report_data.get('remarks', '')
         if remarks:
@@ -644,4 +830,102 @@ class ProductionPDFGenerator:
         doc.build(story)
         buffer.seek(0)
         
+        # Documents are now shown as clickable links instead of being merged
+        # No need to merge PDFs anymore
+        
         return buffer
+    
+    def _merge_supporting_documents(self, main_pdf_buffer, report_data):
+        """Merge IPQC PDF and FTR documents into the main report"""
+        try:
+            from PyPDF2 import PdfReader, PdfWriter
+            
+            writer = PdfWriter()
+            
+            # Add main report pages
+            main_reader = PdfReader(main_pdf_buffer)
+            for page in main_reader.pages:
+                writer.add_page(page)
+            
+            # Collect all IPQC PDFs and FTR documents from production records
+            production_records = report_data.get('production_records', [])
+            
+            for record in production_records:
+                date = record.get('date', 'N/A')
+                
+                # Add IPQC PDF if exists
+                ipqc_pdf = record.get('ipqc_pdf')
+                if ipqc_pdf:
+                    ipqc_path = self._get_full_path(ipqc_pdf)
+                    if os.path.exists(ipqc_path):
+                        try:
+                            ipqc_reader = PdfReader(ipqc_path)
+                            # Add separator page
+                            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+                            from reportlab.lib.pagesizes import A4
+                            separator_buffer = BytesIO()
+                            separator_doc = SimpleDocTemplate(separator_buffer, pagesize=A4)
+                            separator_story = [
+                                Paragraph(f"📋 IPQC PDF - Date: {date}", self.styles['SectionHeader']),
+                                Spacer(1, 20),
+                                Paragraph(f"Attached: {os.path.basename(ipqc_pdf)}", self.styles['Normal'])
+                            ]
+                            separator_doc.build(separator_story)
+                            separator_buffer.seek(0)
+                            separator_reader = PdfReader(separator_buffer)
+                            for page in separator_reader.pages:
+                                writer.add_page(page)
+                            # Add actual IPQC PDF pages
+                            for page in ipqc_reader.pages:
+                                writer.add_page(page)
+                            print(f"✓ Merged IPQC PDF for date {date}")
+                        except Exception as e:
+                            print(f"ERROR merging IPQC PDF for {date}: {str(e)}")
+                
+                # Add FTR document if exists (if it's a PDF)
+                ftr_document = record.get('ftr_document')
+                if ftr_document and ftr_document.lower().endswith('.pdf'):
+                    ftr_path = self._get_full_path(ftr_document)
+                    if os.path.exists(ftr_path):
+                        try:
+                            ftr_reader = PdfReader(ftr_path)
+                            # Add separator page
+                            separator_buffer = BytesIO()
+                            separator_doc = SimpleDocTemplate(separator_buffer, pagesize=A4)
+                            separator_story = [
+                                Paragraph(f"📑 FTR Document - Date: {date}", self.styles['SectionHeader']),
+                                Spacer(1, 20),
+                                Paragraph(f"Attached: {os.path.basename(ftr_document)}", self.styles['Normal'])
+                            ]
+                            separator_doc.build(separator_story)
+                            separator_buffer.seek(0)
+                            separator_reader = PdfReader(separator_buffer)
+                            for page in separator_reader.pages:
+                                writer.add_page(page)
+                            # Add actual FTR PDF pages
+                            for page in ftr_reader.pages:
+                                writer.add_page(page)
+                            print(f"✓ Merged FTR document for date {date}")
+                        except Exception as e:
+                            print(f"ERROR merging FTR document for {date}: {str(e)}")
+            
+            # Write merged PDF to buffer
+            merged_buffer = BytesIO()
+            writer.write(merged_buffer)
+            merged_buffer.seek(0)
+            
+            print(f"✓ Successfully merged supporting documents. Total pages: {len(writer.pages)}")
+            return merged_buffer
+            
+        except Exception as e:
+            print(f"ERROR in PDF merging: {str(e)}")
+            # Return original buffer if merging fails
+            main_pdf_buffer.seek(0)
+            return main_pdf_buffer
+    
+    def _get_full_path(self, relative_path):
+        """Convert relative path to absolute path"""
+        if os.path.isabs(relative_path):
+            return relative_path
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        return os.path.join(backend_dir, relative_path)

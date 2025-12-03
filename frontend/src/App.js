@@ -8,6 +8,7 @@ import FTRDownload from './components/FTRDownload';
 import MasterDataViewer from './components/MasterDataViewer';
 import RejectionUpload from './components/RejectionUpload';
 import FTRDeliveredUpload from './components/FTRDeliveredUpload';
+import COCDashboard from './components/COCDashboard';
 import Login from './components/Login';
 import './styles/Navbar.css';
 
@@ -59,6 +60,8 @@ function App() {
         return <RejectionUpload />;
       case 'ftr-delivered':
         return <FTRDeliveredUpload />;
+      case 'coc-dashboard':
+        return <COCDashboard />;
       case 'reports':
         return <div className="section-placeholder"><h2>Reports</h2><p>Coming Soon...</p></div>;
       case 'settings':
@@ -152,6 +155,14 @@ function App() {
           >
             <span className="icon">✅</span>
             {!sidebarCollapsed && <span className="label">FTR Delivered</span>}
+          </li>
+          <li 
+            className={activeSection === 'coc-dashboard' ? 'active' : ''}
+            onClick={() => setActiveSection('coc-dashboard')}
+            title="COC & Raw Material Dashboard"
+          >
+            <span className="icon">📋</span>
+            {!sidebarCollapsed && <span className="label">COC Dashboard</span>}
           </li>
           <li 
             className={activeSection === 'reports' ? 'active' : ''}

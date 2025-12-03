@@ -90,3 +90,49 @@ def generate_production_excel_report():
         import traceback
         traceback.print_exc()
         return jsonify({'error': str(e)}), 500
+
+@production_bp.route('/api/generate-consolidated-report', methods=['POST'])
+def generate_consolidated_report():
+    """Generate consolidated report with production + COCs + IQC + IPQC"""
+    try:
+        from app.services.consolidated_report_generator import ConsolidatedReportGenerator
+        
+        data = request.json
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        company_name = data.get('company_name')
+        from_date = data.get('from_date')
+        to_date = data.get('to_date')
+        
+        if not all([company_name, from_date, to_date]):
+            return jsonify({'error': 'company_name, from_date, and to_date are required'}), 400
+        
+        # Generate consolidated report
+        generator = ConsolidatedReportGenerator()
+        pdf_buffer = generator.generate_consolidated_report(company_name, from_date, to_date)
+        
+        # Save to generated_pdfs folder
+        output_dir = os.path.join(os.path.dirname(__file__), '../../generated_pdfs')
+        os.makedirs(output_dir, exist_ok=True)
+        
+        filename = f"Consolidated_Report_{company_name}_{from_date}_{to_date}.pdf"
+        filepath = os.path.join(output_dir, filename)
+        
+        with open(filepath, 'wb') as f:
+            f.write(pdf_buffer.getvalue())
+        
+        # Return the PDF
+        pdf_buffer.seek(0)
+        return send_file(
+            pdf_buffer,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        print(f"Error generating consolidated report: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500

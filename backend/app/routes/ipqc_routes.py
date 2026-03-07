@@ -11,6 +11,7 @@ from datetime import datetime
 from app.services.form_generator import IPQCFormGenerator
 from app.services.pdf_generator import IPQCPDFGenerator, SerialNumberGenerator
 from app.services.excel_generator import generate_ipqc_excel
+from app.services.ipqc_checksheet_generator import generate_ipqc_checksheet
 from app.models.ipqc_data import BOMData
 
 ipqc_bp = Blueprint('ipqc', __name__)
@@ -252,7 +253,7 @@ def generate_pdf_only():
 @ipqc_bp.route('/generate-excel-only', methods=['POST'])
 def generate_excel_only():
     """
-    Generate IPQC Excel only
+    Generate IPQC Excel in exact IPQC Check Sheet format
     """
     try:
         data = request.get_json()
@@ -265,26 +266,19 @@ def generate_excel_only():
         jb_cable_length = data.get('jb_cable_length', 1200)
         golden_module_number = data.get('golden_module_number', 'GM-2024-001')
         
-        # Generate IPQC form
-        ipqc_form = form_generator.generate_form(
+        # Generate IPQC Check Sheet in exact reference format
+        excel_path = generate_ipqc_checksheet(
             date=data.get('date'),
-            shift=data.get('shift'),
-            customer_id=customer,
+            shift=data.get('shift', 'A'),
             po_number=po_number,
-            serial_prefix=serial_prefix,
-            serial_start=data.get('serial_start', 1),
-            module_count=data.get('module_count', 1),
             cell_manufacturer=cell_manufacturer,
             cell_efficiency=cell_efficiency,
             jb_cable_length=jb_cable_length,
-            golden_module_number=golden_module_number
-        )
-        
-        # Generate Excel only
-        excel_path = generate_ipqc_excel(
-            ipqc_data=ipqc_form.get('stages', []),
-            bom_data=ipqc_form.get('bom', {}),
-            metadata=ipqc_form.get('metadata', {})
+            golden_module_number=golden_module_number,
+            serial_prefix=serial_prefix,
+            serial_start=data.get('serial_start', 1),
+            module_count=data.get('module_count', 1),
+            customer_id=customer,
         )
         
         return send_file(
@@ -353,11 +347,19 @@ def generate_complete():
             metadata=ipqc_form.get('metadata', {})
         )
         
-        # Generate Excel
-        excel_path = generate_ipqc_excel(
-            ipqc_data=ipqc_form.get('stages', []),
-            bom_data=ipqc_form.get('bom', {}),
-            metadata=ipqc_form.get('metadata', {})
+        # Generate Excel in exact IPQC Check Sheet format
+        excel_path = generate_ipqc_checksheet(
+            date=data.get('date'),
+            shift=data.get('shift', 'A'),
+            po_number=po_number,
+            cell_manufacturer=cell_manufacturer,
+            cell_efficiency=cell_efficiency,
+            jb_cable_length=jb_cable_length,
+            golden_module_number=golden_module_number,
+            serial_prefix=serial_prefix,
+            serial_start=data.get('serial_start', 1),
+            module_count=data.get('module_count', 1),
+            customer_id=customer,
         )
         
         # Create ZIP file with both PDF and Excel

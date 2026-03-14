@@ -2,6 +2,8 @@ from flask import Blueprint, request, jsonify
 from app.models.database import db
 from sqlalchemy import text
 from datetime import datetime
+import pymysql
+from config import Config
 
 ftr_management_bp = Blueprint('ftr_management', __name__)
 
@@ -389,7 +391,10 @@ def assign_serials_to_pdi():
 
 @ftr_management_bp.route('/ftr/assign-excel', methods=['POST'])
 def assign_serials_excel():
-    """Assign specific serial numbers from Excel to a PDI — works even if not in master data"""
+    """Assign specific serial numbers from Excel to a PDI — works even if not in master data.
+    Uses raw pymysql connection for reliable bulk inserts (not SQLAlchemy session).
+    """
+    conn = None
     try:
         data = request.json
         company_id = data.get('company_id')
@@ -399,10 +404,19 @@ def assign_serials_excel():
         if not company_id or not pdi_number or not serial_numbers:
             return jsonify({'success': False, 'message': 'Missing required fields'}), 400
         
+        # Use raw pymysql connection — SQLAlchemy session breaks on bulk ops
+        conn = pymysql.connect(
+            host=Config.MYSQL_HOST,
+            user=Config.MYSQL_USER,
+            password=Config.MYSQL_PASSWORD,
+            database=Config.MYSQL_DB,
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        cursor = conn.cursor()
+        
         assigned_count = 0
         already_assigned_count = 0
-        auto_added_count = 0
-        assigned_date = datetime.now()
+        assigned_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         # Deduplicate serials within the batch
         seen = set()
@@ -415,63 +429,73 @@ def assign_serials_excel():
         
         for sn in unique_serials:
             try:
-                # Use INSERT ... ON DUPLICATE KEY UPDATE — handles both cases:
-                # 1. Serial not in master → INSERTs with status='assigned'
-                # 2. Serial already in master as 'available' → UPDATEs to 'assigned'
-                # 3. Serial already assigned → just updates assigned_date (no harm)
-                result = db.session.execute(text("""
-                    INSERT INTO ftr_master_serials 
-                    (company_id, serial_number, status, pdi_number, upload_date, assigned_date)
-                    VALUES (:company_id, :serial_number, 'assigned', :pdi_number, :assigned_date, :assigned_date)
-                    ON DUPLICATE KEY UPDATE 
-                        status = IF(status = 'available', 'assigned', status),
-                        pdi_number = IF(status = 'available' OR pdi_number IS NULL, :pdi_number2, pdi_number),
-                        assigned_date = IF(status = 'available' OR assigned_date IS NULL, :assigned_date2, assigned_date)
-                """), {
-                    'company_id': company_id,
-                    'serial_number': sn,
-                    'pdi_number': pdi_number,
-                    'assigned_date': assigned_date,
-                    'pdi_number2': pdi_number,
-                    'assigned_date2': assigned_date
-                })
+                # Check if serial exists in ftr_master_serials
+                cursor.execute(
+                    "SELECT id, status, pdi_number FROM ftr_master_serials WHERE company_id = %s AND serial_number = %s",
+                    (company_id, sn)
+                )
+                existing = cursor.fetchone()
                 
-                # rowcount: 1 = new insert, 2 = update happened, 0 = no change
-                if result.rowcount == 1:
-                    auto_added_count += 1
-                elif result.rowcount == 2:
-                    assigned_count += 1
+                if existing:
+                    if existing['status'] == 'available' or existing['pdi_number'] is None:
+                        # Update existing available serial to assigned
+                        cursor.execute(
+                            "UPDATE ftr_master_serials SET status = 'assigned', pdi_number = %s, assigned_date = %s WHERE id = %s",
+                            (pdi_number, assigned_date, existing['id'])
+                        )
+                        assigned_count += 1
+                    else:
+                        # Already assigned to some PDI
+                        already_assigned_count += 1
                 else:
-                    already_assigned_count += 1
+                    # Serial NOT in master data — insert it directly as assigned
+                    cursor.execute(
+                        "INSERT INTO ftr_master_serials (company_id, serial_number, status, pdi_number, upload_date, assigned_date) VALUES (%s, %s, 'assigned', %s, %s, %s)",
+                        (company_id, sn, pdi_number, assigned_date, assigned_date)
+                    )
+                    assigned_count += 1
+                
+                # Also ensure serial is in pdi_serial_numbers table
+                cursor.execute(
+                    "SELECT id FROM pdi_serial_numbers WHERE serial_number = %s",
+                    (sn,)
+                )
+                if not cursor.fetchone():
+                    cursor.execute(
+                        "INSERT INTO pdi_serial_numbers (pdi_number, serial_number, company_id, created_at) VALUES (%s, %s, %s, NOW())",
+                        (pdi_number, sn, company_id)
+                    )
                     
             except Exception as row_err:
                 print(f"Error processing serial {sn}: {row_err}")
-                try:
-                    db.session.rollback()
-                except:
-                    pass
-                already_assigned_count += 1
+                # Don't rollback — just skip this one serial and continue
+                continue
         
-        try:
-            db.session.commit()
-        except Exception as commit_err:
-            print(f"Commit error: {commit_err}")
-            db.session.rollback()
-        
-        total_assigned = assigned_count + auto_added_count
+        # Single commit at end — all or nothing
+        conn.commit()
+        cursor.close()
+        conn.close()
+        conn = None
         
         return jsonify({
             'success': True,
-            'message': f'{total_assigned} barcodes assigned to {pdi_number}',
-            'assigned_count': total_assigned,
+            'message': f'{assigned_count} barcodes assigned to {pdi_number}',
+            'assigned_count': assigned_count,
             'already_assigned': already_assigned_count,
             'not_found': 0,
-            'auto_added': auto_added_count
+            'auto_added': 0
         })
         
     except Exception as e:
-        db.session.rollback()
         print(f"Error assigning serials from Excel: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        if conn:
+            try:
+                conn.rollback()
+                conn.close()
+            except:
+                pass
         return jsonify({'success': False, 'message': str(e)}), 500
 
 @ftr_management_bp.route('/ftr/packed', methods=['POST'])

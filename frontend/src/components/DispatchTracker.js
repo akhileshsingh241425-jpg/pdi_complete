@@ -7,6 +7,22 @@ const API_BASE_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:5003/api' 
   : '/api';
 
+// Main party groups — each main party has sub-parties in MRP
+const MAIN_PARTY_GROUPS = {
+  'RAYS POWER INFRA PRIVATE LIMITED': {
+    label: 'Rays Power',
+    subParties: ['RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi']
+  },
+  'STERLING AND WILSON RENEWABLE ENERGY LIMITED': {
+    label: 'Sterling & Wilson',
+    subParties: ['STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'S&W - NTPC', 'S&W']
+  },
+  'LARSEN & TOUBRO LIMITED, CONSTRUCTION': {
+    label: 'Larsen & Toubro',
+    subParties: ['LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T']
+  }
+};
+
 const DispatchTracker = () => {
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -19,6 +35,7 @@ const DispatchTracker = () => {
   const [showNewCompanyModal, setShowNewCompanyModal] = useState(false);
   const [serialSearch, setSerialSearch] = useState('');
   const [searchResult, setSearchResult] = useState(null);
+  const [selectedMainParty, setSelectedMainParty] = useState('all');
   const [newCompanyData, setNewCompanyData] = useState({
     companyName: '',
     moduleWattage: '',
@@ -997,6 +1014,29 @@ const DispatchTracker = () => {
 
               {/* ==================== TAB 3: Module Pack ==================== */}
               {activeTab === 'modulepack' && (() => {
+                // Detect which main parties have data (from sub_party field)
+                const detectedMainParties = new Set();
+                pdiWise.forEach(pdi => {
+                  [...(pdi.dispatched_serials || []), ...(pdi.packed_serials || [])].forEach(s => {
+                    const sp = s.sub_party || s.party_name || '';
+                    if (sp) {
+                      for (const [mainKey, group] of Object.entries(MAIN_PARTY_GROUPS)) {
+                        if (group.subParties.some(sub => sub.toLowerCase() === sp.toLowerCase())) {
+                          detectedMainParties.add(mainKey);
+                        }
+                      }
+                    }
+                  });
+                });
+
+                // Filter helper: check if a sub_party belongs to selected main party
+                const matchesMainParty = (subParty) => {
+                  if (selectedMainParty === 'all') return true;
+                  const group = MAIN_PARTY_GROUPS[selectedMainParty];
+                  if (!group) return true;
+                  return group.subParties.some(sub => sub.toLowerCase() === (subParty || '').toLowerCase());
+                };
+
                 // Consolidate all packing data across PDIs
                 const allPallets = {}; // pallet_no -> {pdi, count, serials, status, dispatch_party, vehicle_no, date}
                 const pdiPackSummary = []; // [{pdi_number, total_packed, total_dispatched, total_not_packed, pallets}]
@@ -1009,6 +1049,7 @@ const DispatchTracker = () => {
 
                   // From dispatched serials (packed + dispatched)
                   (pdi.dispatched_serials || []).forEach(s => {
+                    if (!matchesMainParty(s.sub_party)) return;
                     pdiDispatched++;
                     const palletNo = s.pallet_no || 'Unknown';
                     pdiPalletSet.add(palletNo);
@@ -1027,6 +1068,7 @@ const DispatchTracker = () => {
 
                   // From packed serials (packed only, not dispatched)
                   (pdi.packed_serials || []).forEach(s => {
+                    if (!matchesMainParty(s.sub_party || s.party_name)) return;
                     pdiPacked++;
                     const palletNo = s.pallet_no || 'Unknown';
                     pdiPalletSet.add(palletNo);
@@ -1068,7 +1110,31 @@ const DispatchTracker = () => {
                 return (
                   <div className="section">
                     <h3>📦 Module Pack — Consolidated View</h3>
-                    <p style={{fontSize: '13px', color: '#64748b', marginBottom: '16px'}}>All PDI packing & dispatch data in one place</p>
+                    <p style={{fontSize: '13px', color: '#64748b', marginBottom: '8px'}}>All PDI packing & dispatch data in one place</p>
+
+                    {/* Main Party Filter Dropdown */}
+                    {detectedMainParties.size > 0 && (
+                      <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '16px', padding: '10px 14px', background: '#f8fafc', borderRadius: '10px', border: '1px solid #e2e8f0'}}>
+                        <label style={{fontSize: '13px', fontWeight: 600, color: '#334155', whiteSpace: 'nowrap'}}>🏢 Main Party:</label>
+                        <select
+                          value={selectedMainParty}
+                          onChange={(e) => setSelectedMainParty(e.target.value)}
+                          style={{padding: '6px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '13px', fontWeight: 500, background: '#fff', cursor: 'pointer', minWidth: '220px'}}
+                        >
+                          <option value="all">All Parties (Combined)</option>
+                          {Array.from(detectedMainParties).map(mainKey => (
+                            <option key={mainKey} value={mainKey}>
+                              {MAIN_PARTY_GROUPS[mainKey].label} — ({MAIN_PARTY_GROUPS[mainKey].subParties.join(', ')})
+                            </option>
+                          ))}
+                        </select>
+                        {selectedMainParty !== 'all' && (
+                          <span style={{fontSize: '11px', color: '#6366f1', background: '#eef2ff', padding: '3px 8px', borderRadius: '6px', fontWeight: 500}}>
+                            Showing: {MAIN_PARTY_GROUPS[selectedMainParty]?.subParties.join(' + ')}
+                          </span>
+                        )}
+                      </div>
+                    )}
 
                     {/* Module Pack Summary Cards */}
                     <div style={{display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '20px'}}>

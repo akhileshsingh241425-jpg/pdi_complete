@@ -1545,14 +1545,14 @@ def get_pdi_production_status(company_id):
         company_name = company['company_name']
         lower_name = company_name.strip().lower()
         
-        # Map to MRP party name for packing API
+        # Map to MRP party name for packing API — fetch ALL sub-parties for comparison
         packing_party_names = []
         if 'rays' in lower_name:
-            packing_party_names = ['RAYS POWER INFRA PRIVATE LIMITED']
+            packing_party_names = ['RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi']
         elif 'larsen' in lower_name or 'l&t' in lower_name or 'lnt' in lower_name:
-            packing_party_names = ['LARSEN & TOUBRO LIMITED', 'LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'LARSEN AND TOUBRO']
+            packing_party_names = ['LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T', 'LARSEN & TOUBRO LIMITED', 'LARSEN AND TOUBRO']
         elif 'sterling' in lower_name or 'sterlin' in lower_name or 's&w' in lower_name:
-            packing_party_names = ['STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'STERLING AND WILSON', 'S&W', 'S&W - NTPC']
+            packing_party_names = ['STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'S&W', 'S&W - NTPC']
         
         # Fetch packed serials from packing API
         packed_lookup = {}  # serial -> {pallet_no, running_order, ...}

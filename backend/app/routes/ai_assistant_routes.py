@@ -126,20 +126,33 @@ def get_all_mrp_data(company):
     """
     mrp_party_name = get_mrp_party_name(company)
     
-    # Check if this is Sterling and Wilson - need to fetch from BOTH party names
+    # Detect main party and fetch ALL sub-parties for complete data
     is_sterling_wilson = 'sterling' in mrp_party_name.lower() or 'sterlin' in company.lower() or 's&w' in company.lower()
+    is_rays = 'rays' in mrp_party_name.lower() or 'rays' in company.lower()
+    is_lt = 'larsen' in mrp_party_name.lower() or 'l&t' in company.lower()
     
     all_data = []
     
-    # Party names to fetch from
+    # Party names to fetch from — include all sub-parties for each main party
     party_names_to_fetch = [mrp_party_name]
     
-    # For Sterling and Wilson, also fetch from "S&W" and "S&W - NTPC" parties
     if is_sterling_wilson:
         party_names_to_fetch = [
             'STERLING AND WILSON RENEWABLE ENERGY LIMITED',
             'S&W',
             'S&W - NTPC'
+        ]
+    elif is_rays:
+        party_names_to_fetch = [
+            'RAYS POWER INFRA PRIVATE LIMITED',
+            'Rays',
+            'Rays-NTPC',
+            'Rays-NTPC-Barethi'
+        ]
+    elif is_lt:
+        party_names_to_fetch = [
+            'LARSEN & TOUBRO LIMITED, CONSTRUCTION',
+            'L&T'
         ]
     
     try:

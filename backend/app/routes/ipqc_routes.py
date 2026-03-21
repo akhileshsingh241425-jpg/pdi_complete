@@ -514,6 +514,73 @@ def generate_serials():
         }), 500
 
 
+@ipqc_bp.route('/auto-checksheet', methods=['POST', 'GET'])
+def auto_checksheet():
+    """
+    Auto-generate IPQC Check Sheet Excel file.
+    All parameters are optional - uses smart defaults.
+    Can be called from any external project.
+
+    GET:  /api/ipqc/auto-checksheet?date=2026-03-21&shift=A&po_number=PO123
+    POST: /api/ipqc/auto-checksheet  (JSON body)
+
+    Parameters (all optional):
+      - date              : str  (YYYY-MM-DD, default: today)
+      - shift             : str  (A/B/C, default: A)
+      - po_number         : str  (default: empty)
+      - cell_manufacturer : str  (default: Solar Space)
+      - cell_efficiency   : float (default: 25.7)
+      - jb_cable_length   : int  (default: 1200)
+      - golden_module_number : str (default: GM-2024-001)
+      - serial_prefix     : str  (default: GS04875KG302250)
+      - serial_start      : int  (default: 1)
+      - module_count      : int  (default: 1)
+      - customer_id       : str  (default: GSPL/IPQC/IPC/003)
+      - checked_by        : str  (default: empty)
+      - reviewed_by       : str  (default: empty)
+
+    Returns: .xlsx file download
+    """
+    try:
+        # Support both GET (query params) and POST (JSON body)
+        if request.method == 'GET':
+            data = request.args.to_dict()
+        else:
+            data = request.get_json(silent=True) or {}
+
+        excel_path = generate_ipqc_checksheet(
+            date=data.get('date'),
+            shift=data.get('shift', 'A'),
+            po_number=data.get('po_number', ''),
+            cell_manufacturer=data.get('cell_manufacturer', 'Solar Space'),
+            cell_efficiency=float(data.get('cell_efficiency', 25.7)),
+            jb_cable_length=int(data.get('jb_cable_length', 1200)),
+            golden_module_number=data.get('golden_module_number', 'GM-2024-001'),
+            serial_prefix=data.get('serial_prefix', 'GS04875KG302250'),
+            serial_start=int(data.get('serial_start', 1)),
+            module_count=int(data.get('module_count', 1)),
+            customer_id=data.get('customer_id', 'GSPL/IPQC/IPC/003'),
+            checked_by=data.get('checked_by', ''),
+            reviewed_by=data.get('reviewed_by', ''),
+        )
+
+        response = send_file(
+            excel_path,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=os.path.basename(excel_path)
+        )
+        # Allow cross-origin for this endpoint
+        response.headers['Access-Control-Allow-Origin'] = '*'
+        return response
+
+    except Exception as e:
+        return jsonify({
+            "error": str(e),
+            "message": "Failed to generate IPQC checksheet"
+        }), 500
+
+
 @ipqc_bp.route('/template-info', methods=['GET'])
 def template_info():
     """Get information about IPQC template"""

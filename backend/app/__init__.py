@@ -19,6 +19,11 @@ def create_app():
     # CORS configuration - allow frontend domain
     frontend_url = 'https://pdi.gspl.cloud'  # Hardcoded for production
     CORS(app, resources={
+        r"/api/ipqc/auto-checksheet": {
+            "origins": "*",
+            "methods": ["GET", "POST", "OPTIONS"],
+            "allow_headers": ["Content-Type"]
+        },
         r"/api/*": {
             "origins": [frontend_url, "http://pdi.gspl.cloud:4000", "http://localhost:3000", "http://localhost:3001"],
             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],

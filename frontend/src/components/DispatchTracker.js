@@ -400,83 +400,58 @@ const DispatchTracker = () => {
                 </div>
               )}
 
-              {/* Sub-Party Data Breakdown */}
+              {/* Party-wise Data Breakdown */}
               {(() => {
                 const packingParties = {};
                 const dispatchParties = {};
                 pdiWise.forEach(pdi => {
                   (pdi.packed_serials || []).forEach(s => {
-                    const sp = s.sub_party || s.party_name || 'Unknown';
-                    packingParties[sp] = (packingParties[sp] || 0) + 1;
+                    const name = s.sub_party || s.party_name || 'Unknown';
+                    packingParties[name] = (packingParties[name] || 0) + 1;
                   });
                   (pdi.dispatched_serials || []).forEach(s => {
-                    const sp = s.sub_party || s.party_name || 'Unknown';
-                    dispatchParties[sp] = (dispatchParties[sp] || 0) + 1;
+                    const name = s.dispatch_party || s.sub_party || s.party_name || 'Unknown';
+                    dispatchParties[name] = (dispatchParties[name] || 0) + 1;
                   });
                 });
-                // Also check extra_packed / extra_dispatched
                 (extraPacked?.serials || []).forEach(s => {
-                  const sp = s.sub_party || s.party_name || 'Unknown';
-                  packingParties[sp] = (packingParties[sp] || 0) + 1;
+                  const name = s.sub_party || s.party_name || 'Unknown';
+                  packingParties[name] = (packingParties[name] || 0) + 1;
                 });
                 (extraDispatched?.serials || []).forEach(s => {
-                  const sp = s.sub_party || s.party_name || 'Unknown';
-                  dispatchParties[sp] = (dispatchParties[sp] || 0) + 1;
+                  const name = s.dispatch_party || s.sub_party || s.party_name || 'Unknown';
+                  dispatchParties[name] = (dispatchParties[name] || 0) + 1;
                 });
 
                 const hasPackingData = Object.keys(packingParties).length > 0;
                 const hasDispatchData = Object.keys(dispatchParties).length > 0;
 
-                // Map sub-party to main party
-                const getMainParty = (sp) => {
-                  for (const [key, group] of Object.entries(MAIN_PARTY_GROUPS)) {
-                    if (group.subParties.some(sub => sub.toLowerCase() === (sp || '').toLowerCase())) {
-                      return group.label;
-                    }
-                  }
-                  return null;
-                };
-
                 if (!hasPackingData && !hasDispatchData) return null;
 
                 return (
                   <div style={{background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '12px'}}>
-                    <strong style={{color: '#166534'}}>📊 Party-wise Data Breakdown:</strong>
+                    <strong style={{color: '#166534'}}>📊 Data kis party se aa raha hai:</strong>
                     <div style={{display: 'grid', gridTemplateColumns: hasPackingData && hasDispatchData ? '1fr 1fr' : '1fr', gap: '16px', marginTop: '10px'}}>
-                      {/* Packing Sub-Parties */}
                       {hasPackingData && (
                         <div>
-                          <div style={{fontWeight: 600, color: '#854d0e', marginBottom: '6px', fontSize: '12px'}}>📦 Packing — Sub Parties:</div>
-                          {Object.entries(packingParties).sort((a, b) => b[1] - a[1]).map(([sp, count]) => {
-                            const mainLabel = getMainParty(sp);
-                            return (
-                              <div key={sp} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 8px', marginBottom: '3px', background: '#fefce8', borderRadius: '6px', border: '1px solid #fde68a'}}>
-                                <span style={{fontSize: '11px', color: '#78350f'}}>
-                                  {sp}
-                                  {mainLabel && <span style={{fontSize: '10px', color: '#a16207', marginLeft: '4px'}}>({mainLabel})</span>}
-                                </span>
-                                <span style={{fontWeight: 700, color: '#d97706', fontSize: '12px'}}>{count.toLocaleString()}</span>
-                              </div>
-                            );
-                          })}
+                          <div style={{fontWeight: 600, color: '#854d0e', marginBottom: '6px', fontSize: '12px'}}>📦 Packing Data:</div>
+                          {Object.entries(packingParties).sort((a, b) => b[1] - a[1]).map(([name, count]) => (
+                            <div key={name} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 8px', marginBottom: '3px', background: '#fefce8', borderRadius: '6px', border: '1px solid #fde68a'}}>
+                              <span style={{fontSize: '11px', color: '#78350f'}}>{name}</span>
+                              <span style={{fontWeight: 700, color: '#d97706', fontSize: '12px'}}>{count.toLocaleString()}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
-                      {/* Dispatch Sub-Parties */}
                       {hasDispatchData && (
                         <div>
-                          <div style={{fontWeight: 600, color: '#166534', marginBottom: '6px', fontSize: '12px'}}>🚚 Dispatch — Sub Parties:</div>
-                          {Object.entries(dispatchParties).sort((a, b) => b[1] - a[1]).map(([sp, count]) => {
-                            const mainLabel = getMainParty(sp);
-                            return (
-                              <div key={sp} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 8px', marginBottom: '3px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #a7f3d0'}}>
-                                <span style={{fontSize: '11px', color: '#065f46'}}>
-                                  {sp}
-                                  {mainLabel && <span style={{fontSize: '10px', color: '#047857', marginLeft: '4px'}}>({mainLabel})</span>}
-                                </span>
-                                <span style={{fontWeight: 700, color: '#16a34a', fontSize: '12px'}}>{count.toLocaleString()}</span>
-                              </div>
-                            );
-                          })}
+                          <div style={{fontWeight: 600, color: '#166534', marginBottom: '6px', fontSize: '12px'}}>🚚 Dispatch Data:</div>
+                          {Object.entries(dispatchParties).sort((a, b) => b[1] - a[1]).map(([name, count]) => (
+                            <div key={name} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 8px', marginBottom: '3px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #a7f3d0'}}>
+                              <span style={{fontSize: '11px', color: '#065f46'}}>{name}</span>
+                              <span style={{fontWeight: 700, color: '#16a34a', fontSize: '12px'}}>{count.toLocaleString()}</span>
+                            </div>
+                          ))}
                         </div>
                       )}
                     </div>

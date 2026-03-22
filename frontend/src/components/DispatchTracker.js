@@ -419,6 +419,113 @@ const DispatchTracker = () => {
                 </div>
               )}
 
+              {/* DISPATCH PARTY BREAKDOWN - computed from dispatched_serials */}
+              {pdiWise.length > 0 && (() => {
+                const dispatchPartyCounts = {};
+                const packedPartyCounts = {};
+                pdiWise.forEach(pdi => {
+                  (pdi.dispatched_serials || []).forEach(s => {
+                    const party = s.sub_party || s.dispatch_party || 'Unknown';
+                    if (party) dispatchPartyCounts[party] = (dispatchPartyCounts[party] || 0) + 1;
+                  });
+                  (pdi.packed_serials || []).forEach(s => {
+                    const party = s.sub_party || s.party_name || 'Unknown';
+                    if (party) packedPartyCounts[party] = (packedPartyCounts[party] || 0) + 1;
+                  });
+                });
+                // Also add extra dispatched/packed
+                (productionData?.extra_dispatched?.serials || []).forEach(s => {
+                  const party = s.sub_party || s.dispatch_party || 'Unknown';
+                  if (party) dispatchPartyCounts[party] = (dispatchPartyCounts[party] || 0) + 1;
+                });
+                (productionData?.extra_packed?.serials || []).forEach(s => {
+                  const party = s.sub_party || s.party_name || 'Unknown';
+                  if (party) packedPartyCounts[party] = (packedPartyCounts[party] || 0) + 1;
+                });
+                const totalDisp = Object.values(dispatchPartyCounts).reduce((a, b) => a + b, 0);
+                const totalPack = Object.values(packedPartyCounts).reduce((a, b) => a + b, 0);
+                const hasData = totalDisp > 0 || totalPack > 0;
+                if (!hasData) return null;
+                return (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfeff 50%, #eff6ff 100%)',
+                    border: '2px solid #22c55e',
+                    borderRadius: '12px',
+                    padding: '16px 20px',
+                    marginBottom: '16px',
+                    boxShadow: '0 2px 8px rgba(34,197,94,0.15)'
+                  }}>
+                    {/* Dispatched Party Breakdown */}
+                    {totalDisp > 0 && (
+                      <div style={{marginBottom: totalPack > 0 ? '16px' : '0'}}>
+                        <div style={{display: 'flex', alignItems: 'center', marginBottom: '12px'}}>
+                          <span style={{fontSize: '20px', marginRight: '10px'}}>🚚</span>
+                          <strong style={{fontSize: '16px', color: '#166534'}}>Dispatched — Party Breakdown</strong>
+                          <span style={{marginLeft: 'auto', fontSize: '13px', color: '#16a34a', fontWeight: 700}}>{totalDisp.toLocaleString()} modules</span>
+                        </div>
+                        <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
+                          {Object.entries(dispatchPartyCounts)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([party, count]) => (
+                              <div key={party} style={{
+                                background: '#fff',
+                                border: '1px solid #22c55e',
+                                borderRadius: '10px',
+                                padding: '10px 18px',
+                                minWidth: '180px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                              }}>
+                                <span style={{fontSize: '13px', fontWeight: 600, color: '#1e293b', textAlign: 'center'}}>{party}</span>
+                                <span style={{fontSize: '22px', fontWeight: 800, color: '#16a34a', marginTop: '4px'}}>
+                                  {count.toLocaleString()}
+                                </span>
+                                <span style={{fontSize: '10px', color: '#64748b'}}>dispatched</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* Packed Party Breakdown */}
+                    {totalPack > 0 && (
+                      <div>
+                        {totalDisp > 0 && <div style={{borderTop: '1px solid #d1d5db', marginBottom: '12px'}}></div>}
+                        <div style={{display: 'flex', alignItems: 'center', marginBottom: '12px'}}>
+                          <span style={{fontSize: '20px', marginRight: '10px'}}>📦</span>
+                          <strong style={{fontSize: '16px', color: '#854d0e'}}>Packed (Not Dispatched) — Party Breakdown</strong>
+                          <span style={{marginLeft: 'auto', fontSize: '13px', color: '#d97706', fontWeight: 700}}>{totalPack.toLocaleString()} modules</span>
+                        </div>
+                        <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
+                          {Object.entries(packedPartyCounts)
+                            .sort((a, b) => b[1] - a[1])
+                            .map(([party, count]) => (
+                              <div key={party} style={{
+                                background: '#fff',
+                                border: '1px solid #f59e0b',
+                                borderRadius: '10px',
+                                padding: '10px 18px',
+                                minWidth: '180px',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                              }}>
+                                <span style={{fontSize: '13px', fontWeight: 600, color: '#1e293b', textAlign: 'center'}}>{party}</span>
+                                <span style={{fontSize: '22px', fontWeight: 800, color: '#d97706', marginTop: '4px'}}>
+                                  {count.toLocaleString()}
+                                </span>
+                                <span style={{fontSize: '10px', color: '#64748b'}}>packed</span>
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* DEBUG INFO - Serial Matching Status */}
               {productionData?.debug_info && (
                 <div style={{background: '#e0f2fe', border: '1px solid #0ea5e9', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '12px', color: '#0369a1'}}>

@@ -110,11 +110,11 @@ def get_company_ftr(company_id):
         """), {'company_id': company_id})
         binning_breakdown = [{'binning': row[0] or 'Unknown', 'count': row[1]} for row in result.fetchall()]
         
-        # Get PDI assignments
+        # Get PDI assignments from pdi_serial_numbers table
         result = db.session.execute(text("""
-            SELECT pdi_number, COUNT(*) as count, MIN(assigned_date) as date
-            FROM ftr_master_serials
-            WHERE company_id = :company_id AND status = 'assigned'
+            SELECT pdi_number, COUNT(*) as count, MIN(created_at) as date
+            FROM pdi_serial_numbers
+            WHERE company_id = :company_id
             GROUP BY pdi_number
             ORDER BY date DESC
         """), {'company_id': company_id})
@@ -619,7 +619,7 @@ def get_pdi_serials(company_id, pdi_number):
         page = int(request.args.get('page', 1))
         page_size = int(request.args.get('page_size', 100))
 
-        base_query = "FROM ftr_master_serials WHERE company_id = :company_id AND pdi_number = :pdi_number"
+        base_query = "FROM pdi_serial_numbers WHERE company_id = :company_id AND pdi_number = :pdi_number"
         params = {'company_id': company_id, 'pdi_number': pdi_number}
         if search:
             base_query += " AND serial_number LIKE :search"
@@ -631,7 +631,7 @@ def get_pdi_serials(company_id, pdi_number):
 
         # Get paginated data
         offset = (page - 1) * page_size
-        data_query = f"SELECT serial_number, pmax, binning, class_status, status, pdi_number, upload_date, assigned_date {base_query} ORDER BY assigned_date DESC LIMIT :limit OFFSET :offset"
+        data_query = f"SELECT serial_number, pdi_number, created_at {base_query} ORDER BY created_at DESC LIMIT :limit OFFSET :offset"
         params.update({'limit': page_size, 'offset': offset})
         result = db.session.execute(text(data_query), params).fetchall()
 
@@ -639,13 +639,13 @@ def get_pdi_serials(company_id, pdi_number):
         for row in result:
             serials.append({
                 'serial_number': row[0],
-                'pmax': float(row[1]) if row[1] else None,
-                'binning': row[2],
-                'class_status': row[3],
-                'status': row[4],
-                'pdi_number': row[5],
-                'upload_date': row[6].strftime('%Y-%m-%d %H:%M:%S') if row[6] else None,
-                'assigned_date': row[7].strftime('%Y-%m-%d %H:%M:%S') if row[7] else None
+                'pmax': None,
+                'binning': None,
+                'class_status': None,
+                'status': 'assigned',
+                'pdi_number': row[1],
+                'upload_date': None,
+                'assigned_date': row[2].strftime('%Y-%m-%d %H:%M:%S') if row[2] else None
             })
 
         return jsonify({
@@ -668,7 +668,7 @@ def delete_pdi_assignment(company_id, pdi_number):
     try:
         # First count how many will be affected
         count_result = db.session.execute(text("""
-            SELECT COUNT(*) FROM ftr_master_serials 
+            SELECT COUNT(*) FROM pdi_serial_numbers 
             WHERE company_id = :company_id AND pdi_number = :pdi_number
         """), {'company_id': company_id, 'pdi_number': pdi_number})
         count = count_result.scalar() or 0
@@ -679,10 +679,9 @@ def delete_pdi_assignment(company_id, pdi_number):
                 'message': f'No serials found for PDI {pdi_number}'
             }), 404
         
-        # Reset serials to available
+        # Delete serials from pdi_serial_numbers
         db.session.execute(text("""
-            UPDATE ftr_master_serials 
-            SET status = 'available', pdi_number = NULL, assigned_date = NULL
+            DELETE FROM pdi_serial_numbers 
             WHERE company_id = :company_id AND pdi_number = :pdi_number
         """), {'company_id': company_id, 'pdi_number': pdi_number})
         
@@ -690,7 +689,7 @@ def delete_pdi_assignment(company_id, pdi_number):
         
         return jsonify({
             'success': True,
-            'message': f'{count} serials removed from PDI {pdi_number} and reset to available',
+            'message': f'{count} serials removed from PDI {pdi_number}',
             'deleted_count': count,
             'pdi_number': pdi_number
         })
@@ -707,9 +706,9 @@ def delete_pdi_assignment(company_id, pdi_number):
 def delete_single_serial(company_id, serial_number):
     """Delete a single serial from a PDI assignment"""
     try:
-        # Check if serial exists
+        # Check if serial exists in pdi_serial_numbers
         result = db.session.execute(text("""
-            SELECT id, pdi_number, status FROM ftr_master_serials 
+            SELECT id, pdi_number FROM pdi_serial_numbers 
             WHERE company_id = :company_id AND serial_number = :serial_number
         """), {'company_id': company_id, 'serial_number': serial_number})
         
@@ -720,10 +719,9 @@ def delete_single_serial(company_id, serial_number):
                 'message': f'Serial {serial_number} not found'
             }), 404
         
-        # Reset to available
+        # Delete from pdi_serial_numbers
         db.session.execute(text("""
-            UPDATE ftr_master_serials 
-            SET status = 'available', pdi_number = NULL, assigned_date = NULL
+            DELETE FROM pdi_serial_numbers 
             WHERE company_id = :company_id AND serial_number = :serial_number
         """), {'company_id': company_id, 'serial_number': serial_number})
         
@@ -731,7 +729,7 @@ def delete_single_serial(company_id, serial_number):
         
         return jsonify({
             'success': True,
-            'message': f'Serial {serial_number} removed from PDI and reset to available',
+            'message': f'Serial {serial_number} removed from PDI',
             'serial_number': serial_number,
             'previous_pdi': serial[1]
         })

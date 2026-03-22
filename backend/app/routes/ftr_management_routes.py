@@ -391,8 +391,9 @@ def assign_serials_to_pdi():
 
 @ftr_management_bp.route('/ftr/assign-excel', methods=['POST'])
 def assign_serials_excel():
-    """Assign specific serial numbers from Excel to a PDI — works even if not in master data.
-    Uses raw pymysql connection for reliable bulk inserts (not SQLAlchemy session).
+    """Assign specific serial numbers from Excel to a PDI.
+    PDI assign is independent of Master FTR — any barcode is accepted.
+    Only checks pdi_serial_numbers for duplicates.
     """
     conn = None
     try:
@@ -404,7 +405,6 @@ def assign_serials_excel():
         if not company_id or not pdi_number or not serial_numbers:
             return jsonify({'success': False, 'message': 'Missing required fields'}), 400
         
-        # Use raw pymysql connection — SQLAlchemy session breaks on bulk ops
         conn = pymysql.connect(
             host=Config.MYSQL_HOST,
             user=Config.MYSQL_USER,
@@ -416,7 +416,6 @@ def assign_serials_excel():
         
         assigned_count = 0
         already_assigned_count = 0
-        assigned_date = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
         # Deduplicate serials within the batch
         seen = set()
@@ -429,49 +428,26 @@ def assign_serials_excel():
         
         for sn in unique_serials:
             try:
-                # Check if serial exists in ftr_master_serials
-                cursor.execute(
-                    "SELECT id, status, pdi_number FROM ftr_master_serials WHERE company_id = %s AND serial_number = %s",
-                    (company_id, sn)
-                )
-                existing = cursor.fetchone()
-                
-                if existing:
-                    if existing['status'] == 'available' or existing['pdi_number'] is None:
-                        # Update existing available serial to assigned
-                        cursor.execute(
-                            "UPDATE ftr_master_serials SET status = 'assigned', pdi_number = %s, assigned_date = %s WHERE id = %s",
-                            (pdi_number, assigned_date, existing['id'])
-                        )
-                        assigned_count += 1
-                    else:
-                        # Already assigned to some PDI
-                        already_assigned_count += 1
-                else:
-                    # Serial NOT in master data — insert it directly as assigned
-                    cursor.execute(
-                        "INSERT INTO ftr_master_serials (company_id, serial_number, status, pdi_number, upload_date, assigned_date) VALUES (%s, %s, 'assigned', %s, %s, %s)",
-                        (company_id, sn, pdi_number, assigned_date, assigned_date)
-                    )
-                    assigned_count += 1
-                
-                # Also ensure serial is in pdi_serial_numbers table
+                # Only check pdi_serial_numbers for duplicates — no Master FTR check
                 cursor.execute(
                     "SELECT id FROM pdi_serial_numbers WHERE serial_number = %s",
                     (sn,)
                 )
-                if not cursor.fetchone():
-                    cursor.execute(
-                        "INSERT INTO pdi_serial_numbers (pdi_number, serial_number, company_id, created_at) VALUES (%s, %s, %s, NOW())",
-                        (pdi_number, sn, company_id)
-                    )
+                if cursor.fetchone():
+                    already_assigned_count += 1
+                    continue
+                
+                # Insert directly into pdi_serial_numbers
+                cursor.execute(
+                    "INSERT INTO pdi_serial_numbers (pdi_number, serial_number, company_id, created_at) VALUES (%s, %s, %s, NOW())",
+                    (pdi_number, sn, company_id)
+                )
+                assigned_count += 1
                     
             except Exception as row_err:
                 print(f"Error processing serial {sn}: {row_err}")
-                # Don't rollback — just skip this one serial and continue
                 continue
         
-        # Single commit at end — all or nothing
         conn.commit()
         cursor.close()
         conn.close()

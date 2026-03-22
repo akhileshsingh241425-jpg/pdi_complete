@@ -565,8 +565,6 @@ const FTRManagement = () => {
           const totalBatches = Math.ceil(serialNumbers.length / BATCH_SIZE);
           let uploadedCount = 0;
           let alreadyAssignedCount = 0;
-          // eslint-disable-next-line no-unused-vars
-          let notFoundCount = 0;
           let failedCount = 0;
           
           for (let i = 0; i < totalBatches; i++) {
@@ -585,7 +583,6 @@ const FTRManagement = () => {
               if (response.data.success) {
                 uploadedCount += (response.data.assigned_count || 0);
                 alreadyAssignedCount += (response.data.already_assigned || 0);
-                notFoundCount += (response.data.not_found || 0);
               } else {
                 failedCount += batch.length;
               }

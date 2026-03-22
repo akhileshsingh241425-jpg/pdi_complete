@@ -340,81 +340,38 @@ const DispatchTracker = () => {
                 </div>
               )}
 
-              {/* Last Refresh Time Indicator */}
+              {/* Last Refresh Time - compact inline */}
               {productionData?.debug_info?.last_refresh_time && (
-                <div style={{
-                  background: '#dcfce7', 
-                  border: '1px solid #22c55e',
-                  borderRadius: '8px', padding: '10px 16px', marginBottom: '16px', fontSize: '13px', 
-                  display: 'flex', justifyContent: 'space-between', alignItems: 'center'
-                }}>
-                  <div>
-                    <span style={{marginRight: '8px'}}>🕐</span>
-                    <strong>Data Refresh:</strong> {productionData.debug_info.server_current_time || productionData.debug_info.last_refresh_time}
-                    <span style={{marginLeft: '8px', color: '#16a34a', fontWeight: 600}}>— LIVE Data</span>
-                  </div>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '12px'}}>
-                    <span style={{fontSize: '11px', color: '#16a34a'}}>✅ LIVE API</span>
-                    <button
-                      onClick={() => loadProductionData(selectedCompany)}
-                      disabled={loading}
-                      style={{
-                        padding: '6px 12px', 
-                        background: '#2563eb', 
-                        color: '#fff', 
-                        border: 'none', 
-                        borderRadius: '6px', 
-                        cursor: loading ? 'not-allowed' : 'pointer',
-                        fontSize: '12px',
-                        fontWeight: 600,
-                        opacity: loading ? 0.6 : 1
-                      }}
-                    >
-                      🔄 Refresh Now
-                    </button>
-                  </div>
+                <div style={{display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px', fontSize: '12px', color: '#64748b'}}>
+                  <span>🕐</span>
+                  <span>Last refresh: <strong style={{color: '#16a34a'}}>{productionData.debug_info.server_current_time || productionData.debug_info.last_refresh_time}</strong></span>
+                  <span style={{background: '#dcfce7', color: '#16a34a', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600}}>LIVE</span>
                 </div>
               )}
 
-              {/* PROMINENT PARTY DATA SOURCE INFO */}
+              {/* Party Fetch Counts - compact inline tags */}
               {productionData?.debug_info?.party_fetch_counts && Object.keys(productionData.debug_info.party_fetch_counts).length > 0 && (
-                <div style={{
-                  background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
-                  border: '2px solid #3b82f6',
-                  borderRadius: '12px',
-                  padding: '16px 20px',
-                  marginBottom: '16px',
-                  boxShadow: '0 2px 8px rgba(59,130,246,0.15)'
-                }}>
-                  <div style={{display: 'flex', alignItems: 'center', marginBottom: '12px'}}>
-                    <span style={{fontSize: '20px', marginRight: '10px'}}>📊</span>
-                    <strong style={{fontSize: '16px', color: '#1e3a5f'}}>Dispatch Data — Party Breakdown</strong>
-                  </div>
-                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
+                <div style={{marginBottom: '10px'}}>
+                  <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px'}}>
+                    <span style={{fontSize: '12px', fontWeight: 600, color: '#475569'}}>📊 MRP Parties:</span>
                     {Object.entries(productionData.debug_info.party_fetch_counts)
                       .sort((a, b) => b[1] - a[1])
                       .map(([party, count]) => (
-                        <div key={party} style={{
-                          background: count > 0 ? '#fff' : '#fee2e2',
-                          border: count > 0 ? '1px solid #22c55e' : '1px solid #fca5a5',
-                          borderRadius: '10px',
-                          padding: '10px 18px',
-                          minWidth: '180px',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                        <span key={party} style={{
+                          background: count > 0 ? '#f0fdf4' : '#fef2f2',
+                          border: `1px solid ${count > 0 ? '#86efac' : '#fca5a5'}`,
+                          borderRadius: '6px',
+                          padding: '3px 10px',
+                          fontSize: '12px',
+                          fontWeight: 600,
+                          color: count > 0 ? '#166534' : '#991b1b'
                         }}>
-                          <span style={{fontSize: '13px', fontWeight: 600, color: '#1e293b', textAlign: 'center'}}>{party}</span>
-                          <span style={{fontSize: '22px', fontWeight: 800, color: count > 0 ? '#16a34a' : '#dc2626', marginTop: '4px'}}>
-                            {count.toLocaleString()}
-                          </span>
-                          <span style={{fontSize: '10px', color: '#64748b'}}>records</span>
-                        </div>
+                          {party}: <strong>{count.toLocaleString()}</strong>
+                        </span>
                       ))}
-                  </div>
-                  <div style={{marginTop: '10px', fontSize: '11px', color: '#64748b'}}>
-                    Total: <strong>{Object.values(productionData.debug_info.party_fetch_counts).reduce((a, b) => a + b, 0).toLocaleString()}</strong> packing records fetched from MRP API
+                    <span style={{fontSize: '11px', color: '#94a3b8'}}>
+                      (Total: {Object.values(productionData.debug_info.party_fetch_counts).reduce((a, b) => a + b, 0).toLocaleString()})
+                    </span>
                   </div>
                 </div>
               )}
@@ -447,108 +404,52 @@ const DispatchTracker = () => {
                 const hasData = totalDisp > 0 || totalPack > 0;
                 if (!hasData) return null;
                 return (
-                  <div style={{
-                    background: 'linear-gradient(135deg, #f0fdf4 0%, #ecfeff 50%, #eff6ff 100%)',
-                    border: '2px solid #22c55e',
-                    borderRadius: '12px',
-                    padding: '16px 20px',
-                    marginBottom: '16px',
-                    boxShadow: '0 2px 8px rgba(34,197,94,0.15)'
-                  }}>
-                    {/* Dispatched Party Breakdown */}
+                  <div style={{marginBottom: '10px'}}>
+                    {/* Dispatched Party Breakdown - compact tags */}
                     {totalDisp > 0 && (
-                      <div style={{marginBottom: totalPack > 0 ? '16px' : '0'}}>
-                        <div style={{display: 'flex', alignItems: 'center', marginBottom: '12px'}}>
-                          <span style={{fontSize: '20px', marginRight: '10px'}}>🚚</span>
-                          <strong style={{fontSize: '16px', color: '#166534'}}>Dispatched — Party Breakdown</strong>
-                          <span style={{marginLeft: 'auto', fontSize: '13px', color: '#16a34a', fontWeight: 700}}>{totalDisp.toLocaleString()} modules</span>
-                        </div>
-                        <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
-                          {Object.entries(dispatchPartyCounts)
-                            .sort((a, b) => b[1] - a[1])
-                            .map(([party, count]) => (
-                              <div key={party} style={{
-                                background: '#fff',
-                                border: '1px solid #22c55e',
-                                borderRadius: '10px',
-                                padding: '10px 18px',
-                                minWidth: '180px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
-                              }}>
-                                <span style={{fontSize: '13px', fontWeight: 600, color: '#1e293b', textAlign: 'center'}}>{party}</span>
-                                <span style={{fontSize: '22px', fontWeight: 800, color: '#16a34a', marginTop: '4px'}}>
-                                  {count.toLocaleString()}
-                                </span>
-                                <span style={{fontSize: '10px', color: '#64748b'}}>dispatched</span>
-                              </div>
-                            ))}
-                        </div>
+                      <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px', marginBottom: totalPack > 0 ? '6px' : '0'}}>
+                        <span style={{fontSize: '12px', fontWeight: 600, color: '#166534'}}>🚚 Dispatched ({totalDisp.toLocaleString()}):</span>
+                        {Object.entries(dispatchPartyCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([party, count]) => (
+                            <span key={party} style={{
+                              background: '#f0fdf4',
+                              border: '1px solid #86efac',
+                              borderRadius: '6px',
+                              padding: '3px 10px',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              color: '#166534'
+                            }}>
+                              {party}: <strong>{count.toLocaleString()}</strong>
+                            </span>
+                          ))}
                       </div>
                     )}
-                    {/* Packed Party Breakdown */}
+                    {/* Packed Party Breakdown - compact tags */}
                     {totalPack > 0 && (
-                      <div>
-                        {totalDisp > 0 && <div style={{borderTop: '1px solid #d1d5db', marginBottom: '12px'}}></div>}
-                        <div style={{display: 'flex', alignItems: 'center', marginBottom: '12px'}}>
-                          <span style={{fontSize: '20px', marginRight: '10px'}}>📦</span>
-                          <strong style={{fontSize: '16px', color: '#854d0e'}}>Packed (Not Dispatched) — Party Breakdown</strong>
-                          <span style={{marginLeft: 'auto', fontSize: '13px', color: '#d97706', fontWeight: 700}}>{totalPack.toLocaleString()} modules</span>
-                        </div>
-                        <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
-                          {Object.entries(packedPartyCounts)
-                            .sort((a, b) => b[1] - a[1])
-                            .map(([party, count]) => (
-                              <div key={party} style={{
-                                background: '#fff',
-                                border: '1px solid #f59e0b',
-                                borderRadius: '10px',
-                                padding: '10px 18px',
-                                minWidth: '180px',
-                                display: 'flex',
-                                flexDirection: 'column',
-                                alignItems: 'center',
-                                boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
-                              }}>
-                                <span style={{fontSize: '13px', fontWeight: 600, color: '#1e293b', textAlign: 'center'}}>{party}</span>
-                                <span style={{fontSize: '22px', fontWeight: 800, color: '#d97706', marginTop: '4px'}}>
-                                  {count.toLocaleString()}
-                                </span>
-                                <span style={{fontSize: '10px', color: '#64748b'}}>packed</span>
-                              </div>
-                            ))}
-                        </div>
+                      <div style={{display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '6px'}}>
+                        <span style={{fontSize: '12px', fontWeight: 600, color: '#854d0e'}}>📦 Packed ({totalPack.toLocaleString()}):</span>
+                        {Object.entries(packedPartyCounts)
+                          .sort((a, b) => b[1] - a[1])
+                          .map(([party, count]) => (
+                            <span key={party} style={{
+                              background: '#fffbeb',
+                              border: '1px solid #fcd34d',
+                              borderRadius: '6px',
+                              padding: '3px 10px',
+                              fontSize: '12px',
+                              fontWeight: 600,
+                              color: '#854d0e'
+                            }}>
+                              {party}: <strong>{count.toLocaleString()}</strong>
+                            </span>
+                          ))}
                       </div>
                     )}
                   </div>
                 );
               })()}
-
-              {/* DEBUG INFO - Serial Matching Status */}
-              {productionData?.debug_info && (
-                <div style={{background: '#e0f2fe', border: '1px solid #0ea5e9', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '12px', color: '#0369a1'}}>
-                  <strong>🔍 Debug Info (Serial Matching):</strong>
-                  <div style={{marginTop: '8px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px'}}>
-                    <div>MRP Barcodes: <strong>{productionData.debug_info.mrp_barcodes_total || productionData.debug_info.live_dispatch_count || 0}</strong></div>
-                    <div>Local Serials: <strong>{productionData.debug_info.local_serials_total || 0}</strong></div>
-                    <div style={{color: (productionData.debug_info.dispatch_matches || 0) > 0 ? '#16a34a' : '#dc2626'}}>
-                      Matches: <strong>{productionData.debug_info.dispatch_matches || 0}</strong>
-                    </div>
-                  </div>
-                  {(productionData.debug_info.sample_mrp_barcodes?.length > 0 || productionData.debug_info.sample_local_serials?.length > 0) && (
-                    <div style={{marginTop: '8px'}}>
-                      <div>Sample MRP: <code style={{background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px'}}>{productionData.debug_info.sample_mrp_barcodes?.[0] || 'N/A'}</code></div>
-                      <div>Sample Local: <code style={{background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px'}}>{productionData.debug_info.sample_local_serials?.[0] || 'N/A'}</code></div>
-                    </div>
-                  )}
-                  <div style={{marginTop: '8px', color: '#6b7280', fontSize: '11px'}}>
-                    Packed API: <strong>{productionData.debug_info.live_packed_count || 0}</strong> | 
-                    Packed Matches: <strong>{productionData.debug_info.packed_matches || 0}</strong>
-                  </div>
-                </div>
-              )}
 
               {/* Summary Cards */}
               <div className="summary-grid">
@@ -632,71 +533,56 @@ const DispatchTracker = () => {
                 )}
               </div>
 
-              {/* Search Serial & Export Section */}
-              <div style={{background: '#f8fafc', borderRadius: '12px', padding: '16px', marginBottom: '20px', border: '1px solid #e2e8f0'}}>
-                <div style={{display: 'flex', gap: '20px', flexWrap: 'wrap', alignItems: 'flex-start'}}>
+              {/* Search Serial & Export Section - compact */}
+              <div style={{background: '#f8fafc', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px', border: '1px solid #e2e8f0'}}>
+                <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center'}}>
                   {/* Serial Search */}
-                  <div style={{flex: '1 1 300px'}}>
-                    <label style={{fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px', display: 'block'}}>🔍 Search Serial Number</label>
-                    <div style={{display: 'flex', gap: '8px'}}>
-                      <input 
-                        type="text"
-                        value={serialSearch}
-                        onChange={(e) => setSerialSearch(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSerialSearch()}
-                        placeholder="Enter serial number..."
-                        style={{flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #d1d5db', fontSize: '14px'}}
-                      />
-                      <button onClick={handleSerialSearch} style={{padding: '10px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 600}}>
-                        Search
-                      </button>
-                    </div>
-                    {searchResult && (
-                      <div style={{marginTop: '10px', padding: '12px', background: '#fff', borderRadius: '8px', border: `2px solid ${searchResult.color}`}}>
-                        <div style={{fontWeight: 600, color: '#334155'}}>✅ Found: <code style={{background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px'}}>{searchResult.serial}</code></div>
-                        <div style={{fontSize: '13px', color: '#64748b', marginTop: '4px'}}>
-                          PDI: <strong>{searchResult.pdi}</strong> | Status: <span style={{color: searchResult.color, fontWeight: 600}}>{searchResult.status}</span> | Pallet: {searchResult.pallet}
-                        </div>
-                      </div>
-                    )}
-                    {serialSearch && searchResult === null && (
-                      <div style={{marginTop: '10px', padding: '10px', background: '#fef2f2', borderRadius: '8px', color: '#991b1b', fontSize: '13px'}}>
-                        ❌ Serial not found in current data
-                      </div>
-                    )}
+                  <div style={{flex: '1 1 250px', display: 'flex', gap: '6px', alignItems: 'center'}}>
+                    <span style={{fontSize: '12px', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap'}}>🔍 Search:</span>
+                    <input 
+                      type="text"
+                      value={serialSearch}
+                      onChange={(e) => setSerialSearch(e.target.value)}
+                      onKeyPress={(e) => e.key === 'Enter' && handleSerialSearch()}
+                      placeholder="Serial number..."
+                      style={{flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px'}}
+                    />
+                    <button onClick={handleSerialSearch} style={{padding: '6px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '12px'}}>
+                      Search
+                    </button>
                   </div>
                   
                   {/* Excel Export Buttons */}
-                  <div style={{flex: '0 0 auto'}}>
-                    <label style={{fontSize: '13px', fontWeight: 600, color: '#334155', marginBottom: '6px', display: 'block'}}>📥 Export to Excel</label>
-                    <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
-                      <button onClick={() => exportToExcel('all')} style={{padding: '8px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600}}>
-                        📥 All Data
-                      </button>
-                      <button onClick={() => exportToExcel('dispatched')} style={{padding: '8px 12px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600}}>
-                        🚚 Dispatched
-                      </button>
-                      <button onClick={() => exportToExcel('packed')} style={{padding: '8px 12px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600}}>
-                        📦 Packed
-                      </button>
-                      <button onClick={() => exportToExcel('not_packed')} style={{padding: '8px 12px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '12px', fontWeight: 600}}>
-                        ⏳ Not Packed
-                      </button>
-                    </div>
+                  <div style={{display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap'}}>
+                    <span style={{fontSize: '12px', fontWeight: 600, color: '#475569'}}>📥</span>
+                    <button onClick={() => exportToExcel('all')} style={{padding: '5px 10px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px', fontWeight: 600}}>All</button>
+                    <button onClick={() => exportToExcel('dispatched')} style={{padding: '5px 10px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px', fontWeight: 600}}>Dispatched</button>
+                    <button onClick={() => exportToExcel('packed')} style={{padding: '5px 10px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px', fontWeight: 600}}>Packed</button>
+                    <button onClick={() => exportToExcel('not_packed')} style={{padding: '5px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px', fontWeight: 600}}>Not Packed</button>
                   </div>
                 </div>
+                {searchResult && (
+                  <div style={{marginTop: '8px', padding: '8px 10px', background: '#fff', borderRadius: '6px', border: `1px solid ${searchResult.color}`, fontSize: '12px'}}>
+                    ✅ <strong>{searchResult.serial}</strong> — PDI: {searchResult.pdi} | <span style={{color: searchResult.color, fontWeight: 600}}>{searchResult.status}</span> | Pallet: {searchResult.pallet}
+                  </div>
+                )}
+                {serialSearch && searchResult === null && (
+                  <div style={{marginTop: '6px', padding: '6px 10px', background: '#fef2f2', borderRadius: '6px', color: '#991b1b', fontSize: '12px'}}>
+                    ❌ Serial not found
+                  </div>
+                )}
               </div>
 
               {/* Overall Dispatch Progress Bar */}
               {totalFtrAssigned > 0 && (
-                <div className="section" style={{marginBottom: '20px'}}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '8px'}}>
-                    <span style={{fontSize: '14px', fontWeight: 600, color: '#334155'}}>Dispatch Progress</span>
-                    <span style={{fontSize: '14px', fontWeight: 600, color: '#2563eb'}}>
+                <div style={{marginBottom: '12px'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', marginBottom: '4px'}}>
+                    <span style={{fontSize: '12px', fontWeight: 600, color: '#334155'}}>Dispatch Progress</span>
+                    <span style={{fontSize: '12px', fontWeight: 600, color: '#2563eb'}}>
                       {Math.round(((totalDispatched + totalPacked) / totalFtrAssigned) * 100)}%
                     </span>
                   </div>
-                  <div style={{height: '24px', borderRadius: '12px', background: '#f1f5f9', overflow: 'hidden', display: 'flex'}}>
+                  <div style={{height: '18px', borderRadius: '9px', background: '#f1f5f9', overflow: 'hidden', display: 'flex'}}>
                     {totalDispatched > 0 && (
                       <div style={{
                         width: `${(totalDispatched / totalFtrAssigned) * 100}%`,

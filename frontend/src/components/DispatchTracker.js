@@ -376,6 +376,49 @@ const DispatchTracker = () => {
                 </div>
               )}
 
+              {/* PROMINENT PARTY DATA SOURCE INFO */}
+              {productionData?.debug_info?.party_fetch_counts && Object.keys(productionData.debug_info.party_fetch_counts).length > 0 && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%)',
+                  border: '2px solid #3b82f6',
+                  borderRadius: '12px',
+                  padding: '16px 20px',
+                  marginBottom: '16px',
+                  boxShadow: '0 2px 8px rgba(59,130,246,0.15)'
+                }}>
+                  <div style={{display: 'flex', alignItems: 'center', marginBottom: '12px'}}>
+                    <span style={{fontSize: '20px', marginRight: '10px'}}>📊</span>
+                    <strong style={{fontSize: '16px', color: '#1e3a5f'}}>Dispatch Data — Party Breakdown</strong>
+                  </div>
+                  <div style={{display: 'flex', flexWrap: 'wrap', gap: '10px'}}>
+                    {Object.entries(productionData.debug_info.party_fetch_counts)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([party, count]) => (
+                        <div key={party} style={{
+                          background: count > 0 ? '#fff' : '#fee2e2',
+                          border: count > 0 ? '1px solid #22c55e' : '1px solid #fca5a5',
+                          borderRadius: '10px',
+                          padding: '10px 18px',
+                          minWidth: '180px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          alignItems: 'center',
+                          boxShadow: '0 1px 4px rgba(0,0,0,0.06)'
+                        }}>
+                          <span style={{fontSize: '13px', fontWeight: 600, color: '#1e293b', textAlign: 'center'}}>{party}</span>
+                          <span style={{fontSize: '22px', fontWeight: 800, color: count > 0 ? '#16a34a' : '#dc2626', marginTop: '4px'}}>
+                            {count.toLocaleString()}
+                          </span>
+                          <span style={{fontSize: '10px', color: '#64748b'}}>records</span>
+                        </div>
+                      ))}
+                  </div>
+                  <div style={{marginTop: '10px', fontSize: '11px', color: '#64748b'}}>
+                    Total: <strong>{Object.values(productionData.debug_info.party_fetch_counts).reduce((a, b) => a + b, 0).toLocaleString()}</strong> packing records fetched from MRP API
+                  </div>
+                </div>
+              )}
+
               {/* DEBUG INFO - Serial Matching Status */}
               {productionData?.debug_info && (
                 <div style={{background: '#e0f2fe', border: '1px solid #0ea5e9', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '12px', color: '#0369a1'}}>
@@ -397,80 +440,8 @@ const DispatchTracker = () => {
                     Packed API: <strong>{productionData.debug_info.live_packed_count || 0}</strong> | 
                     Packed Matches: <strong>{productionData.debug_info.packed_matches || 0}</strong>
                   </div>
-                  {/* Party-wise fetch info */}
-                  {productionData.debug_info.party_fetch_counts && Object.keys(productionData.debug_info.party_fetch_counts).length > 0 && (
-                    <div style={{marginTop: '8px', borderTop: '1px solid #bae6fd', paddingTop: '8px'}}>
-                      <strong style={{color: '#0369a1'}}>📋 Party-wise Packing Data:</strong>
-                      <div style={{marginTop: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px'}}>
-                        {Object.entries(productionData.debug_info.party_fetch_counts).sort((a,b) => b[1]-a[1]).map(([party, count]) => (
-                          <span key={party} style={{background: count > 0 ? '#dcfce7' : '#fee2e2', border: `1px solid ${count > 0 ? '#86efac' : '#fca5a5'}`, borderRadius: '6px', padding: '3px 10px', fontSize: '11px', color: count > 0 ? '#166534' : '#991b1b'}}>
-                            {party}: <strong>{count.toLocaleString()}</strong>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  )}
                 </div>
               )}
-
-              {/* Party-wise Data Breakdown */}
-              {(() => {
-                const packingParties = {};
-                const dispatchParties = {};
-                pdiWise.forEach(pdi => {
-                  (pdi.packed_serials || []).forEach(s => {
-                    const name = s.sub_party || s.party_name || 'Unknown';
-                    packingParties[name] = (packingParties[name] || 0) + 1;
-                  });
-                  (pdi.dispatched_serials || []).forEach(s => {
-                    const name = s.dispatch_party || s.sub_party || s.party_name || 'Unknown';
-                    dispatchParties[name] = (dispatchParties[name] || 0) + 1;
-                  });
-                });
-                (extraPacked?.serials || []).forEach(s => {
-                  const name = s.sub_party || s.party_name || 'Unknown';
-                  packingParties[name] = (packingParties[name] || 0) + 1;
-                });
-                (extraDispatched?.serials || []).forEach(s => {
-                  const name = s.dispatch_party || s.sub_party || s.party_name || 'Unknown';
-                  dispatchParties[name] = (dispatchParties[name] || 0) + 1;
-                });
-
-                const hasPackingData = Object.keys(packingParties).length > 0;
-                const hasDispatchData = Object.keys(dispatchParties).length > 0;
-
-                if (!hasPackingData && !hasDispatchData) return null;
-
-                return (
-                  <div style={{background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '12px'}}>
-                    <strong style={{color: '#166534'}}>📊 Data kis party se aa raha hai:</strong>
-                    <div style={{display: 'grid', gridTemplateColumns: hasPackingData && hasDispatchData ? '1fr 1fr' : '1fr', gap: '16px', marginTop: '10px'}}>
-                      {hasPackingData && (
-                        <div>
-                          <div style={{fontWeight: 600, color: '#854d0e', marginBottom: '6px', fontSize: '12px'}}>📦 Packing Data:</div>
-                          {Object.entries(packingParties).sort((a, b) => b[1] - a[1]).map(([name, count]) => (
-                            <div key={name} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 8px', marginBottom: '3px', background: '#fefce8', borderRadius: '6px', border: '1px solid #fde68a'}}>
-                              <span style={{fontSize: '11px', color: '#78350f'}}>{name}</span>
-                              <span style={{fontWeight: 700, color: '#d97706', fontSize: '12px'}}>{count.toLocaleString()}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {hasDispatchData && (
-                        <div>
-                          <div style={{fontWeight: 600, color: '#166534', marginBottom: '6px', fontSize: '12px'}}>🚚 Dispatch Data:</div>
-                          {Object.entries(dispatchParties).sort((a, b) => b[1] - a[1]).map(([name, count]) => (
-                            <div key={name} style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '3px 8px', marginBottom: '3px', background: '#ecfdf5', borderRadius: '6px', border: '1px solid #a7f3d0'}}>
-                              <span style={{fontSize: '11px', color: '#065f46'}}>{name}</span>
-                              <span style={{fontWeight: 700, color: '#16a34a', fontSize: '12px'}}>{count.toLocaleString()}</span>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
 
               {/* Summary Cards */}
               <div className="summary-grid">

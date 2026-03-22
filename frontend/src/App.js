@@ -386,6 +386,14 @@ function App() {
         return <QMSDashboard />;
       case 'pdi-docs':
         return <PDIDocGenerator />;
+      case 'deploy-test':
+        return (
+          <div style={{padding: '40px', textAlign: 'center'}}>
+            <h1 style={{fontSize: '48px', color: '#16a34a'}}>✅ DEPLOYMENT WORKING!</h1>
+            <p style={{fontSize: '24px', color: '#475569', marginTop: '16px'}}>If you can see this page, the build pipeline is fully functional.</p>
+            <p style={{fontSize: '18px', color: '#94a3b8', marginTop: '8px'}}>Commit: 8cd8631 | Build Time: {new Date().toLocaleString()}</p>
+          </div>
+        );
       default:
         return <IPQCForm />;
     }
@@ -460,6 +468,15 @@ function App() {
               {!sidebarCollapsed && <span className="label">Dispatch Tracker</span>}
             </li>
           )}
+          <li 
+            className={activeSection === 'deploy-test' ? 'active' : ''}
+            onClick={() => handleMenuItemClick('deploy-test')}
+            title="Deploy Test"
+            style={{background: activeSection === 'deploy-test' ? '#dcfce7' : 'transparent', borderLeft: '3px solid #16a34a'}}
+          >
+            <span className="icon" style={{fontSize: '20px'}}>🧪</span>
+            {!sidebarCollapsed && <span className="label" style={{color: '#16a34a', fontWeight: 700}}>Deploy Test</span>}
+          </li>
           {hasAccess('ipqc') && (
             <li 
               className={activeSection === 'ipqc' ? 'active' : ''}

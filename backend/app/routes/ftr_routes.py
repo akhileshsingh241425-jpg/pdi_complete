@@ -1242,11 +1242,11 @@ def get_dispatch_tracking_pdi_wise(company_id):
 
         company_name = company.get('company_name') or company.get('companyName', '')
 
-        # Step 2: Get all PDI assignments from ftr_master_serials
+        # Step 2: Get all PDI assignments from pdi_serial_numbers
         cursor.execute("""
-            SELECT pdi_number, COUNT(*) as total, MIN(assigned_date) as assigned_date
-            FROM ftr_master_serials
-            WHERE company_id = %s AND status = 'assigned' AND pdi_number IS NOT NULL
+            SELECT pdi_number, COUNT(*) as total, MIN(created_at) as assigned_date
+            FROM pdi_serial_numbers
+            WHERE company_id = %s AND pdi_number IS NOT NULL
             GROUP BY pdi_number
             ORDER BY assigned_date DESC
         """, (company_id,))
@@ -1263,11 +1263,11 @@ def get_dispatch_tracking_pdi_wise(company_id):
                 "pdi_wise": []
             })
 
-        # Step 3: Get ALL serials for this company from ftr_master_serials
+        # Step 3: Get ALL serials for this company from pdi_serial_numbers
         cursor.execute("""
             SELECT serial_number, pdi_number
-            FROM ftr_master_serials
-            WHERE company_id = %s AND status = 'assigned' AND pdi_number IS NOT NULL
+            FROM pdi_serial_numbers
+            WHERE company_id = %s AND pdi_number IS NOT NULL
         """, (company_id,))
         all_serials_rows = cursor.fetchall()
         cursor.close()
@@ -1426,13 +1426,13 @@ def get_pdi_production_status(company_id):
             conn.close()
             return jsonify({"success": False, "error": "Company not found"}), 404
 
-        # 2. FTR Master Serials — PDI-wise count (modules FTR tested & assigned)
+        # 2. PDI Serial Numbers — PDI-wise count (modules assigned via Excel upload)
         ftr_pdi_counts = {}
         try:
             cursor.execute("""
-                SELECT pdi_number, COUNT(*) as count, MIN(assigned_date) as assigned_date
-                FROM ftr_master_serials
-                WHERE company_id = %s AND status = 'assigned' AND pdi_number IS NOT NULL
+                SELECT pdi_number, COUNT(*) as count, MIN(created_at) as assigned_date
+                FROM pdi_serial_numbers
+                WHERE company_id = %s AND pdi_number IS NOT NULL
                 GROUP BY pdi_number
                 ORDER BY pdi_number
             """, (company_id,))
@@ -1442,7 +1442,7 @@ def get_pdi_production_status(company_id):
                     'assigned_date': str(row['assigned_date']) if row['assigned_date'] else None
                 }
         except Exception as e:
-            print(f"[PDI Production] ftr_master_serials query error: {e}")
+            print(f"[PDI Production] pdi_serial_numbers query error: {e}")
 
         # 3. Production Records — PDI-wise total production (day + night)
         production_pdi_counts = {}
@@ -1517,12 +1517,12 @@ def get_pdi_production_status(company_id):
         except Exception as e:
             print(f"[PDI Production] total FTR query error: {e}")
 
-        # 6. Get ALL serials per PDI for dispatch cross-reference (no status filter)
+        # 6. Get ALL serials per PDI for dispatch cross-reference from pdi_serial_numbers
         pdi_serials_map = {}
         try:
             cursor.execute("""
                 SELECT serial_number, pdi_number
-                FROM ftr_master_serials
+                FROM pdi_serial_numbers
                 WHERE company_id = %s AND pdi_number IS NOT NULL AND serial_number IS NOT NULL
             """, (company_id,))
             for row in cursor.fetchall():
@@ -1532,7 +1532,7 @@ def get_pdi_production_status(company_id):
                     if pdi not in pdi_serials_map:
                         pdi_serials_map[pdi] = []
                     pdi_serials_map[pdi].append(serial.strip())
-            print(f"[PDI Production] Total serials from FTR: {sum(len(s) for s in pdi_serials_map.values())} across {len(pdi_serials_map)} PDIs")
+            print(f"[PDI Production] Total serials from pdi_serial_numbers: {sum(len(s) for s in pdi_serials_map.values())} across {len(pdi_serials_map)} PDIs")
             # Print sample serial for debug
             if pdi_serials_map:
                 first_pdi = list(pdi_serials_map.keys())[0]
@@ -2093,9 +2093,9 @@ def export_not_packed_serials(company_id):
         company_name = company.get('company_name', '')
         lower_name = company_name.lower()
         
-        # Get all FTR serials for this company grouped by PDI
+        # Get all PDI serials for this company grouped by PDI
         cursor.execute("""
-            SELECT pdi_number, serial_number FROM ftr_master_serials 
+            SELECT pdi_number, serial_number FROM pdi_serial_numbers 
             WHERE company_id = %s AND pdi_number IS NOT NULL AND serial_number IS NOT NULL
         """, (company_id,))
         

@@ -428,10 +428,10 @@ def assign_serials_excel():
         
         for sn in unique_serials:
             try:
-                # Only check pdi_serial_numbers for duplicates — no Master FTR check
+                # Only check pdi_serial_numbers for duplicates — scoped to this company
                 cursor.execute(
-                    "SELECT id FROM pdi_serial_numbers WHERE serial_number = %s",
-                    (sn,)
+                    "SELECT id FROM pdi_serial_numbers WHERE serial_number = %s AND company_id = %s",
+                    (sn, company_id)
                 )
                 if cursor.fetchone():
                     already_assigned_count += 1

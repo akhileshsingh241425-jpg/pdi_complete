@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { companyService } from '../services/apiService';
 import '../styles/DispatchTracker.css';
 import * as XLSX from 'xlsx';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_BASE_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:5003/api' 
@@ -23,6 +24,8 @@ const MAIN_PARTY_GROUPS = {
   }
 };
 
+const CHART_COLORS = ['#22c55e', '#f59e0b', '#ef4444', '#d946ef', '#06b6d4', '#8b5cf6']; // eslint-disable-line no-unused-vars
+
 const DispatchTracker = () => {
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
@@ -41,10 +44,46 @@ const DispatchTracker = () => {
     moduleWattage: '',
     cellsPerModule: ''
   });
+  // Auto-refresh
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const [refreshInterval, setRefreshInterval] = useState(300); // seconds
+  const [countdown, setCountdown] = useState(0);
+  const autoRefreshRef = useRef(null);
+  const countdownRef = useRef(null);
+  // Enhanced search
+  const [searchType, setSearchType] = useState('serial'); // serial | pallet | vehicle
+  const [searchResults, setSearchResults] = useState([]);
 
   useEffect(() => {
     loadCompanies();
   }, []);
+
+  // Auto-refresh effect
+  const loadProductionDataRef = useRef(null);
+  useEffect(() => {
+    if (autoRefresh && selectedCompany && !loading) {
+      setCountdown(refreshInterval);
+      // Countdown timer
+      countdownRef.current = setInterval(() => {
+        setCountdown(prev => {
+          if (prev <= 1) return refreshInterval;
+          return prev - 1;
+        });
+      }, 1000);
+      // Actual refresh
+      autoRefreshRef.current = setInterval(() => {
+        if (loadProductionDataRef.current) loadProductionDataRef.current(selectedCompany);
+      }, refreshInterval * 1000);
+      return () => {
+        clearInterval(autoRefreshRef.current);
+        clearInterval(countdownRef.current);
+      };
+    } else {
+      clearInterval(autoRefreshRef.current);
+      clearInterval(countdownRef.current);
+      setCountdown(0);
+    }
+  }, [autoRefresh, refreshInterval, selectedCompany, loading]);
 
   const loadCompanies = async () => {
     try {
@@ -56,13 +95,12 @@ const DispatchTracker = () => {
     }
   };
 
-  const loadProductionData = async (company) => {
+  const loadProductionData = useCallback(async (company) => {
     try {
       setLoading(true);
       setError(null);
       setExpandedPdi(null);
       
-      // Add timestamp to prevent browser caching
       const timestamp = Date.now();
       const url = `${API_BASE_URL}/ftr/pdi-production-status/${company.id}?t=${timestamp}`;
       
@@ -86,7 +124,12 @@ const DispatchTracker = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  // Keep ref updated for auto-refresh
+  useEffect(() => {
+    loadProductionDataRef.current = loadProductionData;
+  }, [loadProductionData]);
 
   const handleCompanySelect = (companyId) => {
     if (!companyId) {
@@ -118,36 +161,42 @@ const DispatchTracker = () => {
     }
   };
 
-  // Search serial number across all PDIs
+  // Enhanced search — serial, pallet, vehicle
   const handleSerialSearch = () => {
     if (!serialSearch.trim() || !productionData?.pdi_wise) {
       setSearchResult(null);
+      setSearchResults([]);
       return;
     }
     const searchTerm = serialSearch.trim().toUpperCase();
-    let found = null;
+    const results = [];
     
     for (const pdi of productionData.pdi_wise) {
-      // Check dispatched
-      const dispSerial = (pdi.dispatched_serials || []).find(s => s.serial?.toUpperCase().includes(searchTerm));
-      if (dispSerial) {
-        found = { pdi: pdi.pdi_number, serial: dispSerial.serial, status: 'Dispatched', pallet: dispSerial.pallet_no, color: '#22c55e' };
-        break;
-      }
-      // Check packed
-      const packSerial = (pdi.packed_serials || []).find(s => s.serial?.toUpperCase().includes(searchTerm));
-      if (packSerial) {
-        found = { pdi: pdi.pdi_number, serial: packSerial.serial, status: 'Packed', pallet: packSerial.pallet_no, color: '#f59e0b' };
-        break;
-      }
-      // Check not packed
-      const notPackSerial = (pdi.not_packed_serials || []).find(s => s.serial?.toUpperCase().includes(searchTerm));
-      if (notPackSerial) {
-        found = { pdi: pdi.pdi_number, serial: notPackSerial.serial, status: 'Not Packed', pallet: '—', color: '#ef4444' };
-        break;
+      if (searchType === 'serial') {
+        const dispSerial = (pdi.dispatched_serials || []).find(s => s.serial?.toUpperCase().includes(searchTerm));
+        if (dispSerial) { results.push({ pdi: pdi.pdi_number, serial: dispSerial.serial, status: 'Dispatched', pallet: dispSerial.pallet_no, vehicle: dispSerial.vehicle_no || '', date: dispSerial.date || '', color: '#22c55e' }); }
+        const packSerial = (pdi.packed_serials || []).find(s => s.serial?.toUpperCase().includes(searchTerm));
+        if (packSerial) { results.push({ pdi: pdi.pdi_number, serial: packSerial.serial, status: 'Packed', pallet: packSerial.pallet_no, vehicle: '', date: '', color: '#f59e0b' }); }
+        const notPackSerial = (pdi.not_packed_serials || []).find(s => s.serial?.toUpperCase().includes(searchTerm));
+        if (notPackSerial) { results.push({ pdi: pdi.pdi_number, serial: notPackSerial.serial, status: 'Not Packed', pallet: '—', vehicle: '', date: '', color: '#ef4444' }); }
+      } else if (searchType === 'pallet') {
+        const matchedDisp = (pdi.dispatched_serials || []).filter(s => (s.pallet_no || '').toUpperCase().includes(searchTerm));
+        const matchedPack = (pdi.packed_serials || []).filter(s => (s.pallet_no || '').toUpperCase().includes(searchTerm));
+        matchedDisp.forEach(s => results.push({ pdi: pdi.pdi_number, serial: s.serial, status: 'Dispatched', pallet: s.pallet_no, vehicle: s.vehicle_no || '', date: s.date || '', color: '#22c55e' }));
+        matchedPack.forEach(s => results.push({ pdi: pdi.pdi_number, serial: s.serial, status: 'Packed', pallet: s.pallet_no, vehicle: '', date: '', color: '#f59e0b' }));
+      } else if (searchType === 'vehicle') {
+        const matchedDisp = (pdi.dispatched_serials || []).filter(s => (s.vehicle_no || s.dispatch_party || '').toUpperCase().includes(searchTerm));
+        matchedDisp.forEach(s => results.push({ pdi: pdi.pdi_number, serial: s.serial, status: 'Dispatched', pallet: s.pallet_no, vehicle: s.vehicle_no || s.dispatch_party || '', date: s.date || '', color: '#22c55e' }));
       }
     }
-    setSearchResult(found);
+    
+    if (results.length > 0) {
+      setSearchResult(results[0]);
+      setSearchResults(results);
+    } else {
+      setSearchResult(null);
+      setSearchResults([]);
+    }
   };
 
   // Export serials to Excel
@@ -256,13 +305,113 @@ const DispatchTracker = () => {
   const extraDispatched = productionData?.extra_dispatched || { count: 0, serials: [], pallet_groups: [] };
   const extraPacked = productionData?.extra_packed || { count: 0, serials: [], pallet_groups: [] };
 
+  // Donut chart data
+  const pieData = totalFtrAssigned > 0 ? [
+    { name: 'Dispatched', value: totalDispatched, color: '#22c55e' },
+    { name: 'Packed', value: totalPacked, color: '#f59e0b' },
+    { name: 'Not Packed', value: totalDispPending, color: '#ef4444' },
+  ].filter(d => d.value > 0) : [];
+
+  // PDI-wise bar chart data
+  const barData = pdiWise.slice(0, 15).map(pdi => ({
+    name: pdi.pdi_number?.replace(/PDI[-_]?/i, 'P') || '?',
+    Dispatched: pdi.dispatched || 0,
+    Packed: pdi.packed || 0,
+    'Not Packed': pdi.dispatch_pending || pdi.not_packed || 0,
+  }));
+
+  // Vehicle/Invoice-wise dispatch grouping
+  const vehicleGroups = {};
+  pdiWise.forEach(pdi => {
+    (pdi.dispatched_serials || []).forEach(s => {
+      const vehicle = s.vehicle_no || s.dispatch_party || 'Unknown';
+      if (!vehicleGroups[vehicle]) vehicleGroups[vehicle] = { vehicle, count: 0, pallets: new Set(), dates: new Set(), party: s.sub_party || '' };
+      vehicleGroups[vehicle].count++;
+      if (s.pallet_no) vehicleGroups[vehicle].pallets.add(s.pallet_no);
+      if (s.date) vehicleGroups[vehicle].dates.add(s.date);
+    });
+  });
+  (extraDispatched.serials || []).forEach(s => {
+    const vehicle = s.vehicle_no || s.dispatch_party || 'Unknown';
+    if (!vehicleGroups[vehicle]) vehicleGroups[vehicle] = { vehicle, count: 0, pallets: new Set(), dates: new Set(), party: s.sub_party || '' };
+    vehicleGroups[vehicle].count++;
+    if (s.pallet_no) vehicleGroups[vehicle].pallets.add(s.pallet_no);
+    if (s.date) vehicleGroups[vehicle].dates.add(s.date);
+  });
+  const vehicleList = Object.values(vehicleGroups)
+    .map(v => ({ ...v, pallets: Array.from(v.pallets), dates: Array.from(v.dates).sort().reverse() }))
+    .sort((a, b) => b.count - a.count);
+
+  // Date-wise dispatch grouping for timeline
+  const dateGroups = {};
+  pdiWise.forEach(pdi => {
+    (pdi.dispatched_serials || []).forEach(s => {
+      const date = s.date || 'Unknown';
+      if (!dateGroups[date]) dateGroups[date] = { date, count: 0, vehicles: new Set() };
+      dateGroups[date].count++;
+      if (s.vehicle_no || s.dispatch_party) dateGroups[date].vehicles.add(s.vehicle_no || s.dispatch_party);
+    });
+  });
+  const dateList = Object.values(dateGroups)
+    .map(d => ({ ...d, vehicles: Array.from(d.vehicles) }))
+    .filter(d => d.date !== 'Unknown')
+    .sort((a, b) => b.date.localeCompare(a.date));
+
+  // Data Health metrics
+  const debugInfo = productionData?.debug_info || {};
+  const localTotal = debugInfo.local_serials_total || 0;
+  const mrpDispatchTotal = debugInfo.live_dispatch_count || 0;
+  const mrpPackedTotal = debugInfo.live_packed_count || 0;
+  const dispatchMatches = debugInfo.dispatch_matches || 0;
+  const packedMatches = debugInfo.packed_matches || 0;
+  const matchRate = localTotal > 0 ? Math.round(((dispatchMatches + packedMatches) / localTotal) * 100) : 0;
+
+  // Format countdown
+  const formatCountdown = (secs) => {
+    const m = Math.floor(secs / 60);
+    const s = secs % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
   return (
     <div className="dispatch-tracker">
       {/* Header */}
       <div className="dispatch-header">
-        <div>
-          <h1>📊 PDI Production & Dispatch Report</h1>
-          <p>Complete PDI-wise production, packing, pallet &amp; dispatch status</p>
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%'}}>
+          <div>
+            <h1>📊 PDI Production & Dispatch Report</h1>
+            <p>Complete PDI-wise production, packing, pallet &amp; dispatch status</p>
+          </div>
+          {selectedCompany && (
+            <div style={{display: 'flex', gap: '8px', alignItems: 'center'}}>
+              {autoRefresh && countdown > 0 && (
+                <span style={{background: 'rgba(255,255,255,0.2)', padding: '6px 12px', borderRadius: '20px', fontSize: '12px', color: '#fff', fontWeight: 600, fontFamily: 'monospace'}}>
+                  ⏱️ {formatCountdown(countdown)}
+                </span>
+              )}
+              <select
+                value={refreshInterval}
+                onChange={(e) => setRefreshInterval(Number(e.target.value))}
+                style={{padding: '6px 10px', borderRadius: '8px', border: 'none', fontSize: '12px', fontWeight: 600, background: 'rgba(255,255,255,0.2)', color: '#fff', cursor: 'pointer'}}
+              >
+                <option value={60} style={{color: '#000'}}>1 min</option>
+                <option value={180} style={{color: '#000'}}>3 min</option>
+                <option value={300} style={{color: '#000'}}>5 min</option>
+                <option value={600} style={{color: '#000'}}>10 min</option>
+              </select>
+              <button
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                style={{
+                  padding: '6px 14px', borderRadius: '20px', border: '2px solid rgba(255,255,255,0.3)',
+                  fontSize: '12px', fontWeight: 700, cursor: 'pointer',
+                  background: autoRefresh ? 'rgba(34,197,94,0.3)' : 'rgba(255,255,255,0.1)',
+                  color: '#fff'
+                }}
+              >
+                {autoRefresh ? '🟢 Auto ON' : '⚪ Auto OFF'}
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -533,18 +682,27 @@ const DispatchTracker = () => {
                 )}
               </div>
 
-              {/* Search Serial & Export Section - compact */}
+              {/* Search Serial & Export Section - enhanced */}
               <div style={{background: '#f8fafc', borderRadius: '8px', padding: '10px 14px', marginBottom: '12px', border: '1px solid #e2e8f0'}}>
                 <div style={{display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center'}}>
-                  {/* Serial Search */}
-                  <div style={{flex: '1 1 250px', display: 'flex', gap: '6px', alignItems: 'center'}}>
-                    <span style={{fontSize: '12px', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap'}}>🔍 Search:</span>
+                  {/* Enhanced Search */}
+                  <div style={{flex: '1 1 350px', display: 'flex', gap: '6px', alignItems: 'center'}}>
+                    <span style={{fontSize: '12px', fontWeight: 600, color: '#475569', whiteSpace: 'nowrap'}}>🔍</span>
+                    <select
+                      value={searchType}
+                      onChange={(e) => { setSearchType(e.target.value); setSearchResult(null); setSearchResults([]); }}
+                      style={{padding: '6px 8px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '12px', fontWeight: 600, background: '#fff', minWidth: '80px'}}
+                    >
+                      <option value="serial">Serial</option>
+                      <option value="pallet">Pallet</option>
+                      <option value="vehicle">Vehicle/Invoice</option>
+                    </select>
                     <input 
                       type="text"
                       value={serialSearch}
                       onChange={(e) => setSerialSearch(e.target.value)}
                       onKeyPress={(e) => e.key === 'Enter' && handleSerialSearch()}
-                      placeholder="Serial number..."
+                      placeholder={searchType === 'serial' ? 'Serial number...' : searchType === 'pallet' ? 'Pallet number...' : 'Vehicle / Invoice no...'}
                       style={{flex: 1, padding: '6px 10px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px'}}
                     />
                     <button onClick={handleSerialSearch} style={{padding: '6px 12px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '12px'}}>
@@ -561,17 +719,103 @@ const DispatchTracker = () => {
                     <button onClick={() => exportToExcel('not_packed')} style={{padding: '5px 10px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '11px', fontWeight: 600}}>Not Packed</button>
                   </div>
                 </div>
-                {searchResult && (
-                  <div style={{marginTop: '8px', padding: '8px 10px', background: '#fff', borderRadius: '6px', border: `1px solid ${searchResult.color}`, fontSize: '12px'}}>
-                    ✅ <strong>{searchResult.serial}</strong> — PDI: {searchResult.pdi} | <span style={{color: searchResult.color, fontWeight: 600}}>{searchResult.status}</span> | Pallet: {searchResult.pallet}
+                {/* Multiple search results */}
+                {searchResults.length > 0 && (
+                  <div style={{marginTop: '8px'}}>
+                    <div style={{fontSize: '11px', color: '#64748b', marginBottom: '4px', fontWeight: 600}}>
+                      Found {searchResults.length} result{searchResults.length > 1 ? 's' : ''}
+                    </div>
+                    <div style={{maxHeight: '200px', overflowY: 'auto'}}>
+                      {searchResults.slice(0, 50).map((r, i) => (
+                        <div key={i} style={{padding: '6px 10px', background: '#fff', borderRadius: '6px', border: `1px solid ${r.color}`, fontSize: '12px', marginBottom: '4px'}}>
+                          <strong style={{fontFamily: 'monospace'}}>{r.serial}</strong> — PDI: {r.pdi} | <span style={{color: r.color, fontWeight: 600}}>{r.status}</span> | Pallet: {r.pallet} {r.vehicle ? `| Vehicle: ${r.vehicle}` : ''} {r.date ? `| ${r.date}` : ''}
+                        </div>
+                      ))}
+                      {searchResults.length > 50 && <div style={{fontSize: '11px', color: '#94a3b8', textAlign: 'center'}}>...and {searchResults.length - 50} more</div>}
+                    </div>
                   </div>
                 )}
-                {serialSearch && searchResult === null && (
+                {serialSearch && searchResults.length === 0 && searchResult === null && (
                   <div style={{marginTop: '6px', padding: '6px 10px', background: '#fef2f2', borderRadius: '6px', color: '#991b1b', fontSize: '12px'}}>
-                    ❌ Serial not found
+                    ❌ No results found for "{serialSearch}" in {searchType}
                   </div>
                 )}
               </div>
+
+              {/* ====== CHARTS SECTION ====== */}
+              {totalFtrAssigned > 0 && (
+                <div style={{display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) minmax(350px, 2fr)', gap: '16px', marginBottom: '16px'}}>
+                  {/* Donut Chart */}
+                  <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'}}>
+                    <h4 style={{margin: '0 0 8px', fontSize: '14px', color: '#334155', fontWeight: 700}}>📊 Dispatch Overview</h4>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <PieChart>
+                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={({name, value, percent}) => `${name}: ${value.toLocaleString()} (${(percent*100).toFixed(0)}%)`}>
+                          {pieData.map((entry, index) => (
+                            <Cell key={index} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value) => value.toLocaleString()} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                  {/* Bar Chart — PDI-wise */}
+                  {barData.length > 0 && (
+                    <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'}}>
+                      <h4 style={{margin: '0 0 8px', fontSize: '14px', color: '#334155', fontWeight: 700}}>📈 PDI-wise Breakdown</h4>
+                      <ResponsiveContainer width="100%" height={220}>
+                        <BarChart data={barData} margin={{top: 5, right: 10, left: 0, bottom: 5}}>
+                          <XAxis dataKey="name" tick={{fontSize: 11}} />
+                          <YAxis tick={{fontSize: 11}} />
+                          <Tooltip formatter={(value) => value.toLocaleString()} />
+                          <Legend iconSize={10} wrapperStyle={{fontSize: 11}} />
+                          <Bar dataKey="Dispatched" stackId="a" fill="#22c55e" />
+                          <Bar dataKey="Packed" stackId="a" fill="#f59e0b" />
+                          <Bar dataKey="Not Packed" stackId="a" fill="#ef4444" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ====== DATA HEALTH PANEL ====== */}
+              {localTotal > 0 && (
+                <div style={{background: matchRate >= 80 ? '#f0fdf4' : matchRate >= 50 ? '#fffbeb' : '#fef2f2', border: `1px solid ${matchRate >= 80 ? '#86efac' : matchRate >= 50 ? '#fcd34d' : '#fca5a5'}`, borderRadius: '10px', padding: '12px 16px', marginBottom: '12px'}}>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px'}}>
+                    <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
+                      <span style={{fontSize: '18px'}}>{matchRate >= 80 ? '✅' : matchRate >= 50 ? '⚠️' : '🔴'}</span>
+                      <div>
+                        <div style={{fontSize: '13px', fontWeight: 700, color: '#1e293b'}}>Data Health: {matchRate}% Match</div>
+                        <div style={{fontSize: '11px', color: '#64748b'}}>
+                          Local PDI: {localTotal.toLocaleString()} | MRP Dispatch: {mrpDispatchTotal.toLocaleString()} | MRP Packed: {mrpPackedTotal.toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                      <span style={{background: '#dcfce7', color: '#166534', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600}}>
+                        Dispatch Match: {dispatchMatches.toLocaleString()}
+                      </span>
+                      <span style={{background: '#fef9c3', color: '#854d0e', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600}}>
+                        Packed Match: {packedMatches.toLocaleString()}
+                      </span>
+                      {extraDispatched.count > 0 && (
+                        <span style={{background: '#f5d0fe', color: '#86198f', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600}}>
+                          Extra in MRP: {extraDispatched.count.toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Debug sample serials */}
+                  {debugInfo.sample_local_serials?.length > 0 && debugInfo.sample_mrp_barcodes?.length > 0 && matchRate < 50 && (
+                    <div style={{marginTop: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', fontSize: '11px', color: '#475569'}}>
+                      <div><strong>Local sample:</strong> <span style={{fontFamily: 'monospace'}}>{debugInfo.sample_local_serials.slice(0, 3).join(', ')}</span></div>
+                      <div><strong>MRP sample:</strong> <span style={{fontFamily: 'monospace'}}>{debugInfo.sample_mrp_barcodes.slice(0, 3).join(', ')}</span></div>
+                      <div style={{color: '#dc2626', fontWeight: 600, marginTop: '4px'}}>⚠️ Format mismatch detected — check serial number format in PDI uploads vs MRP system</div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Overall Dispatch Progress Bar */}
               {totalFtrAssigned > 0 && (
@@ -641,6 +885,18 @@ const DispatchTracker = () => {
                   onClick={() => setActiveTab('pallets')}
                 >
                   📦 Pallet-wise Report
+                </button>
+                <button 
+                  className={`tab-btn ${activeTab === 'vehicle' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('vehicle')}
+                >
+                  🚚 Vehicle/Invoice-wise
+                </button>
+                <button 
+                  className={`tab-btn ${activeTab === 'timeline' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('timeline')}
+                >
+                  📅 Dispatch Timeline
                 </button>
                 <button 
                   className={`tab-btn ${activeTab === 'modulepack' ? 'active' : ''}`}
@@ -1048,7 +1304,136 @@ const DispatchTracker = () => {
                 </div>
               )}
 
-              {/* ==================== TAB 3: Module Pack ==================== */}
+              {/* ==================== TAB 3: Vehicle/Invoice-wise ==================== */}
+              {activeTab === 'vehicle' && (
+                <div className="section">
+                  <h3>🚚 Vehicle / Invoice-wise Dispatch Report</h3>
+                  {vehicleList.length > 0 ? (
+                    <>
+                      <div style={{marginBottom: '12px', fontSize: '13px', color: '#64748b'}}>
+                        Total: <strong>{vehicleList.length}</strong> vehicles/invoices, <strong>{vehicleList.reduce((sum, v) => sum + v.count, 0).toLocaleString()}</strong> modules dispatched
+                      </div>
+                      <div className="pallet-table-container">
+                        <table className="pallet-table" style={{fontSize: '12px'}}>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Vehicle / Invoice No</th>
+                              <th>Modules</th>
+                              <th>Pallets</th>
+                              <th>Sub Party</th>
+                              <th>Dispatch Date(s)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {vehicleList.map((v, i) => (
+                              <tr key={i}>
+                                <td>{i + 1}</td>
+                                <td><strong style={{fontFamily: 'monospace'}}>{v.vehicle}</strong></td>
+                                <td><span className="badge" style={{background: '#dcfce7', color: '#166534'}}>{v.count.toLocaleString()}</span></td>
+                                <td>
+                                  <span className="badge" style={{background: '#e0e7ff', color: '#3730a3'}}>{v.pallets.length}</span>
+                                  {v.pallets.length > 0 && v.pallets.length <= 10 && (
+                                    <div style={{fontSize: '10px', color: '#94a3b8', marginTop: '2px'}}>{v.pallets.join(', ')}</div>
+                                  )}
+                                </td>
+                                <td style={{fontSize: '11px'}}>{v.party || '—'}</td>
+                                <td style={{fontSize: '11px'}}>{v.dates.length > 0 ? v.dates[0] : '—'}</td>
+                              </tr>
+                            ))}
+                            <tr style={{fontWeight: 'bold', background: '#f0f7ff', borderTop: '2px solid #2563eb'}}>
+                              <td></td>
+                              <td>TOTAL</td>
+                              <td><span className="badge" style={{background: '#dcfce7', color: '#166534'}}>{vehicleList.reduce((s, v) => s + v.count, 0).toLocaleString()}</span></td>
+                              <td><span className="badge" style={{background: '#e0e7ff', color: '#3730a3'}}>{vehicleList.reduce((s, v) => s + v.pallets.length, 0)}</span></td>
+                              <td></td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{textAlign: 'center', color: '#94a3b8', padding: '40px 0'}}>
+                      <div style={{fontSize: '40px', marginBottom: '10px'}}>🚚</div>
+                      <p>No vehicle/dispatch data available</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ==================== TAB 4: Dispatch Timeline ==================== */}
+              {activeTab === 'timeline' && (
+                <div className="section">
+                  <h3>📅 Dispatch Timeline — Day-wise</h3>
+                  {dateList.length > 0 ? (
+                    <>
+                      <div style={{marginBottom: '12px', fontSize: '13px', color: '#64748b'}}>
+                        Last dispatch: <strong style={{color: '#16a34a'}}>{dateList[0]?.date}</strong> ({dateList[0]?.count.toLocaleString()} modules)
+                        {dateList.length > 1 && <> | First: <strong>{dateList[dateList.length - 1]?.date}</strong> | Total days: <strong>{dateList.length}</strong></>}
+                      </div>
+                      {/* Timeline bar chart */}
+                      {dateList.length > 1 && (
+                        <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px'}}>
+                          <ResponsiveContainer width="100%" height={250}>
+                            <BarChart data={[...dateList].reverse().slice(-30)} margin={{top: 5, right: 10, left: 0, bottom: 5}}>
+                              <XAxis dataKey="date" tick={{fontSize: 10}} angle={-45} textAnchor="end" height={60} />
+                              <YAxis tick={{fontSize: 11}} />
+                              <Tooltip formatter={(value) => value.toLocaleString()} />
+                              <Bar dataKey="count" fill="#22c55e" name="Modules" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+                      {/* Timeline Table */}
+                      <div className="pallet-table-container">
+                        <table className="pallet-table" style={{fontSize: '12px'}}>
+                          <thead>
+                            <tr>
+                              <th>#</th>
+                              <th>Date</th>
+                              <th>Modules Dispatched</th>
+                              <th>Vehicles / Invoices</th>
+                              <th>Cumulative Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(() => {
+                              let cumulative = 0;
+                              return [...dateList].reverse().map((d, i) => {
+                                cumulative += d.count;
+                                return (
+                                  <tr key={i}>
+                                    <td>{i + 1}</td>
+                                    <td><strong>{d.date}</strong></td>
+                                    <td><span className="badge" style={{background: '#dcfce7', color: '#166534'}}>{d.count.toLocaleString()}</span></td>
+                                    <td style={{fontSize: '11px'}}>{d.vehicles.length > 0 ? d.vehicles.join(', ') : '—'}</td>
+                                    <td><strong style={{color: '#2563eb'}}>{cumulative.toLocaleString()}</strong></td>
+                                  </tr>
+                                );
+                              }).reverse();
+                            })()}
+                            <tr style={{fontWeight: 'bold', background: '#f0f7ff', borderTop: '2px solid #2563eb'}}>
+                              <td></td>
+                              <td>TOTAL</td>
+                              <td><span className="badge" style={{background: '#dcfce7', color: '#166534'}}>{dateList.reduce((s, d) => s + d.count, 0).toLocaleString()}</span></td>
+                              <td>{dateList.length} days</td>
+                              <td></td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{textAlign: 'center', color: '#94a3b8', padding: '40px 0'}}>
+                      <div style={{fontSize: '40px', marginBottom: '10px'}}>📅</div>
+                      <p>No dispatch date information available</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ==================== TAB 5: Module Pack ==================== */}
               {activeTab === 'modulepack' && (() => {
                 // Detect which main parties have data (from sub_party field)
                 const detectedMainParties = new Set();

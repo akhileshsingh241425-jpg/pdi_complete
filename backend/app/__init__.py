@@ -76,6 +76,7 @@ def create_app():
     from app.routes.witness_report_routes import witness_report_bp
     from app.routes.calibration_routes import calibration_bp
     from app.routes.qms_routes import qms_bp
+    from app.routes.telegram_routes import telegram_bp
     from app.routes.pdi_doc_routes import pdi_doc_bp as pdi_doc_v5_bp
     
     _pdi_doc_full_available = False
@@ -109,6 +110,7 @@ def create_app():
     app.register_blueprint(witness_report_bp, url_prefix='/api')
     app.register_blueprint(calibration_bp)
     app.register_blueprint(qms_bp)
+    app.register_blueprint(telegram_bp)
     if _pdi_doc_full_available:
         # Full PDI docs - routes already have /pdi-docs/ prefix, register at /api
         app.register_blueprint(pdi_doc_full_bp, url_prefix='/api')
@@ -205,5 +207,9 @@ def create_app():
     # Start scheduler when app starts (only in production mode)
     if os.environ.get('FLASK_ENV') != 'development' or os.environ.get('START_SCHEDULER') == 'true':
         run_packing_validation()
+    
+    # Start Telegram dispatch bot scheduler
+    from app.routes.telegram_routes import start_telegram_scheduler
+    start_telegram_scheduler(app)
     
     return app

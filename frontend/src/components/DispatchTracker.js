@@ -51,6 +51,14 @@ const DispatchTracker = () => {
   const [searchType, setSearchType] = useState('serial'); // serial | pallet | vehicle
   const [searchResults, setSearchResults] = useState([]);
 
+  // Telegram Bot
+  const [telegramConfig, setTelegramConfig] = useState(null);
+  const [telegramLoading, setTelegramLoading] = useState(false);
+  const [telegramMsg, setTelegramMsg] = useState('');
+  const [botToken, setBotToken] = useState('');
+  const [chatId, setChatId] = useState('');
+  const [botInterval, setBotInterval] = useState(60);
+
   useEffect(() => {
     loadCompanies();
   }, []);
@@ -90,6 +98,84 @@ const DispatchTracker = () => {
       console.error('Error loading companies:', err);
       setCompanies([]);
     }
+  };
+
+  // ====== TELEGRAM BOT FUNCTIONS ======
+  const loadTelegramStatus = async () => {
+    try {
+      const resp = await fetch(`${API_BASE_URL}/telegram/status`);
+      const data = await resp.json();
+      if (data.success) {
+        setTelegramConfig(data.config);
+        if (data.config.chat_id) setChatId(data.config.chat_id);
+        if (data.config.interval_minutes) setBotInterval(data.config.interval_minutes);
+      }
+    } catch (err) { console.error('Telegram status error:', err); }
+  };
+
+  const saveTelegramConfig = async () => {
+    if (!botToken && !telegramConfig?.bot_token_set) {
+      setTelegramMsg('❌ Bot token required! Get it from @BotFather');
+      return;
+    }
+    if (!chatId) {
+      setTelegramMsg('❌ Chat ID required!');
+      return;
+    }
+    setTelegramLoading(true);
+    try {
+      const body = {
+        chat_id: chatId,
+        interval_minutes: botInterval,
+        is_active: true,
+        companies: companies.map(c => ({ id: c.id, name: c.company_name }))
+      };
+      if (botToken) body.bot_token = botToken;
+      const resp = await fetch(`${API_BASE_URL}/telegram/setup`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      if (data.success) {
+        setTelegramMsg('✅ Config saved! Bot is active.');
+        setBotToken('');
+        loadTelegramStatus();
+      } else {
+        setTelegramMsg(`❌ ${data.error}`);
+      }
+    } catch (err) { setTelegramMsg(`❌ Error: ${err.message}`); }
+    setTelegramLoading(false);
+  };
+
+  const testTelegram = async () => {
+    setTelegramLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/telegram/test`, { method: 'POST' });
+      const data = await resp.json();
+      setTelegramMsg(data.success ? '✅ Test message sent! Check Telegram.' : `❌ ${data.error}`);
+    } catch (err) { setTelegramMsg(`❌ ${err.message}`); }
+    setTelegramLoading(false);
+  };
+
+  const sendNowTelegram = async (companyId) => {
+    setTelegramLoading(true);
+    try {
+      const body = companyId ? { company_id: companyId } : {};
+      const resp = await fetch(`${API_BASE_URL}/telegram/send-now`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      });
+      const data = await resp.json();
+      setTelegramMsg(data.success ? '✅ Report sent to Telegram!' : `❌ ${data.error}`);
+    } catch (err) { setTelegramMsg(`❌ ${err.message}`); }
+    setTelegramLoading(false);
+  };
+
+  const toggleTelegram = async () => {
+    try {
+      const resp = await fetch(`${API_BASE_URL}/telegram/toggle`, { method: 'POST' });
+      const data = await resp.json();
+      setTelegramMsg(data.success ? `✅ Bot ${data.is_active ? 'activated' : 'deactivated'}` : `❌ ${data.error}`);
+      loadTelegramStatus();
+    } catch (err) { setTelegramMsg(`❌ ${err.message}`); }
   };
 
   const loadProductionData = useCallback(async (company) => {
@@ -339,146 +425,7 @@ const DispatchTracker = () => {
     .filter(d => d.date !== 'Unknown')
     .sort((a, b) => b.date.localeCompare(a.date));
 
-  // Data Health metrics
-  const debugInfo = productionData?.debug_info || {};
-  const localTotal = debugInfo.local_serials_total || 0;
-  const mrpDispatchTotal = debugInfo.live_dispatch_count || 0;
-  const mrpPackedTotal = debugInfo.live_packed_count || 0;
-  const dispatchMatches = debugInfo.dispatch_matches || 0;
-  const packedMatches = debugInfo.packed_matches || 0;
-  const matchRate = localTotal > 0 ? Math.round(((dispatchMatches + packedMatches) / localTotal) * 100) : 0;
 
-  // ====== AI INSIGHTS ENGINE ======
-  const generateInsights = () => {
-    if (!productionData || totalFtrAssigned === 0) return [];
-    const insights = [];
-    const dispatchPct = Math.round((totalDispatched / totalFtrAssigned) * 100);
-    const packedPct = Math.round((totalPacked / totalFtrAssigned) * 100);
-    const pendingPct = Math.round((totalDispPending / totalFtrAssigned) * 100);
-
-    // 1. Completion prediction
-    if (totalDispatched > 0 && dateList.length >= 2) {
-      const sortedDates = [...dateList].sort((a, b) => a.date.localeCompare(b.date));
-      const totalDays = sortedDates.length;
-      const avgPerDay = Math.round(totalDispatched / totalDays);
-      const remaining = totalPacked + totalDispPending;
-      if (avgPerDay > 0 && remaining > 0) {
-        const daysLeft = Math.ceil(remaining / avgPerDay);
-        const eta = new Date();
-        eta.setDate(eta.getDate() + daysLeft);
-        insights.push({
-          type: 'prediction',
-          icon: '🤖',
-          title: 'Dispatch Completion ETA',
-          text: `Average ${avgPerDay.toLocaleString()} modules/day dispatched. At this rate, remaining ${remaining.toLocaleString()} modules will complete in ~${daysLeft} days (${eta.toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: 'numeric'})}).`,
-          severity: daysLeft > 30 ? 'warning' : 'success'
-        });
-      }
-    }
-
-    // 2. Packed bottleneck
-    if (totalPacked > 0) {
-      insights.push({
-        type: 'bottleneck',
-        icon: '📦',
-        title: `${totalPacked.toLocaleString()} Modules Stuck in Packed`,
-        text: `${packedPct}% of assigned modules are packed but NOT dispatched. These are ready to go — dispatching them will bring dispatch % from ${dispatchPct}% to ${dispatchPct + packedPct}%.`,
-        severity: packedPct > 20 ? 'critical' : packedPct > 10 ? 'warning' : 'info'
-      });
-    }
-
-    // 3. Not packed alert
-    if (totalDispPending > 0) {
-      insights.push({
-        type: 'alert',
-        icon: '⏳',
-        title: `${totalDispPending.toLocaleString()} Modules Not Yet Packed`,
-        text: `${pendingPct}% modules haven't entered packing. These need to be packed first before dispatch. ${totalPacked > 0 ? `Focus: Pack these ${totalDispPending.toLocaleString()} + dispatch the ${totalPacked.toLocaleString()} already packed = 0 pending.` : 'Priority: Start packing immediately.'}`,
-        severity: pendingPct > 30 ? 'critical' : 'warning'
-      });
-    }
-
-    // 4. Zero pending celebration
-    if (totalDispPending === 0 && totalPacked === 0 && totalDispatched > 0) {
-      insights.push({
-        type: 'success',
-        icon: '🎉',
-        title: '100% Dispatch Complete!',
-        text: `All ${totalDispatched.toLocaleString()} modules have been dispatched. No pending items.`,
-        severity: 'success'
-      });
-    }
-
-    // 5. Extra dispatched anomaly
-    if (extraDispatched.count > 0) {
-      const extraPct = totalFtrAssigned > 0 ? Math.round((extraDispatched.count / totalFtrAssigned) * 100) : 0;
-      insights.push({
-        type: 'anomaly',
-        icon: '🔀',
-        title: `${extraDispatched.count.toLocaleString()} Extra Modules in MRP`,
-        text: `MRP shows ${extraDispatched.count.toLocaleString()} dispatched serials not in your PDI records (${extraPct}% of assigned). ${extraDispatched.count > 100 ? 'Likely: PDI serial uploads are incomplete, or modules were dispatched from a different batch.' : 'Check if these belong to a different order or are re-dispatches.'}`,
-        severity: extraPct > 20 ? 'critical' : 'warning'
-      });
-    }
-
-    // 6. Data mismatch detection
-    if (matchRate < 50 && localTotal > 0) {
-      insights.push({
-        type: 'mismatch',
-        icon: '🔴',
-        title: 'Serial Format Mismatch Detected',
-        text: `Only ${matchRate}% of your PDI serials match MRP. ${debugInfo.sample_local_serials?.[0] && debugInfo.sample_mrp_barcodes?.[0] ? `Your format: "${debugInfo.sample_local_serials[0]}" vs MRP: "${debugInfo.sample_mrp_barcodes[0]}". Fix the import format to resolve dispatch tracking.` : 'Check that serial numbers uploaded match MRP barcode format exactly (case, spaces, prefixes).'}`,
-        severity: 'critical'
-      });
-    }
-
-    // 7. PDI-wise stuck detection
-    const stuckPdis = pdiWise.filter(pdi => (pdi.dispatched || 0) === 0 && (pdi.packed || 0) === 0 && (pdi.ftr_tested || 0) > 0);
-    if (stuckPdis.length > 0) {
-      const stuckModules = stuckPdis.reduce((sum, p) => sum + (p.ftr_tested || 0), 0);
-      insights.push({
-        type: 'alert',
-        icon: '🚫',
-        title: `${stuckPdis.length} PDI(s) with Zero Dispatch & Zero Packing`,
-        text: `${stuckPdis.map(p => p.pdi_number).join(', ')} — total ${stuckModules.toLocaleString()} modules have no packing or dispatch activity. These may be blocked or not yet started.`,
-        severity: 'warning'
-      });
-    }
-
-    // 8. Production vs Dispatch gap
-    if (totalProduced > 0 && totalFtrAssigned > 0) {
-      const prodVsDisp = totalProduced - totalDispatched;
-      if (prodVsDisp > 0) {
-        insights.push({
-          type: 'gap',
-          icon: '📊',
-          title: `Production-Dispatch Gap: ${prodVsDisp.toLocaleString()} modules`,
-          text: `Produced: ${totalProduced.toLocaleString()} | Dispatched: ${totalDispatched.toLocaleString()}. Gap of ${prodVsDisp.toLocaleString()} modules between production and dispatch. Packed: ${totalPacked.toLocaleString()} + Not Packed: ${totalDispPending.toLocaleString()} = ${(totalPacked + totalDispPending).toLocaleString()} in pipeline.`,
-          severity: 'info'
-        });
-      }
-    }
-
-    // 9. Last dispatch activity warning  
-    if (dateList.length > 0) {
-      const lastDate = new Date(dateList[0].date);
-      const today = new Date();
-      const daysSince = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
-      if (daysSince > 3 && totalDispPending + totalPacked > 0) {
-        insights.push({
-          type: 'inactivity',
-          icon: '💤',
-          title: `No Dispatch in ${daysSince} Days`,
-          text: `Last dispatch was on ${dateList[0].date} (${daysSince} days ago). ${totalPacked > 0 ? `${totalPacked.toLocaleString()} packed modules are ready — dispatch is stalling.` : `${totalDispPending.toLocaleString()} modules still need packing.`}`,
-          severity: daysSince > 7 ? 'critical' : 'warning'
-        });
-      }
-    }
-
-    return insights;
-  };
-
-  const aiInsights = generateInsights();
 
   // Format countdown
   const formatCountdown = (secs) => {
@@ -856,46 +803,6 @@ const DispatchTracker = () => {
                 )}
               </div>
 
-              {/* ====== AI INSIGHTS PANEL ====== */}
-              {aiInsights.length > 0 && (
-                <div style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', borderRadius: '14px', padding: '16px 18px', marginBottom: '14px', border: '1px solid #334155'}}>
-                  <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px'}}>
-                    <span style={{fontSize: '20px'}}>🤖</span>
-                    <span style={{fontSize: '15px', fontWeight: 700, color: '#e2e8f0', letterSpacing: '0.5px'}}>AI Insights</span>
-                    <span style={{fontSize: '10px', color: '#94a3b8', background: '#334155', padding: '2px 8px', borderRadius: '10px', fontWeight: 600}}>
-                      {aiInsights.length} findings
-                    </span>
-                    {localTotal > 0 && (
-                      <span style={{marginLeft: 'auto', fontSize: '11px', padding: '3px 10px', borderRadius: '10px', fontWeight: 700,
-                        background: matchRate >= 80 ? 'rgba(34,197,94,0.2)' : matchRate >= 50 ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)',
-                        color: matchRate >= 80 ? '#4ade80' : matchRate >= 50 ? '#fbbf24' : '#f87171',
-                        border: `1px solid ${matchRate >= 80 ? 'rgba(34,197,94,0.3)' : matchRate >= 50 ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'}`
-                      }}>
-                        Data Health: {matchRate}%
-                      </span>
-                    )}
-                  </div>
-                  <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
-                    {aiInsights.map((insight, i) => (
-                      <div key={i} style={{
-                        background: insight.severity === 'critical' ? 'rgba(239,68,68,0.1)' : insight.severity === 'warning' ? 'rgba(245,158,11,0.1)' : insight.severity === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(59,130,246,0.08)',
-                        border: `1px solid ${insight.severity === 'critical' ? 'rgba(239,68,68,0.25)' : insight.severity === 'warning' ? 'rgba(245,158,11,0.25)' : insight.severity === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(59,130,246,0.2)'}`,
-                        borderRadius: '10px', padding: '10px 14px',
-                        borderLeft: `4px solid ${insight.severity === 'critical' ? '#ef4444' : insight.severity === 'warning' ? '#f59e0b' : insight.severity === 'success' ? '#22c55e' : '#3b82f6'}`
-                      }}>
-                        <div style={{display: 'flex', gap: '8px', alignItems: 'flex-start'}}>
-                          <span style={{fontSize: '16px', flexShrink: 0}}>{insight.icon}</span>
-                          <div>
-                            <div style={{fontSize: '13px', fontWeight: 700, color: '#f1f5f9', marginBottom: '3px'}}>{insight.title}</div>
-                            <div style={{fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5}}>{insight.text}</div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Overall Dispatch Progress Bar */}
               {totalFtrAssigned > 0 && (
                 <div style={{marginBottom: '12px'}}>
@@ -982,6 +889,12 @@ const DispatchTracker = () => {
                   onClick={() => setActiveTab('modulepack')}
                 >
                   📦 Module Pack
+                </button>
+                <button 
+                  className={`tab-btn ${activeTab === 'telegram' ? 'active' : ''}`}
+                  onClick={() => { setActiveTab('telegram'); loadTelegramStatus(); }}
+                >
+                  📱 Telegram Bot
                 </button>
               </div>
 
@@ -1893,6 +1806,125 @@ const DispatchTracker = () => {
                   </div>
                 );
               })()}
+
+              {/* ==================== TAB 6: Telegram Bot ==================== */}
+              {activeTab === 'telegram' && (
+                <div className="section" style={{maxWidth: '600px'}}>
+                  <h3>📱 Telegram Dispatch Bot</h3>
+                  <p style={{color: '#64748b', fontSize: '13px', marginBottom: '16px'}}>
+                    Har <strong>{botInterval} min</strong> me har party ka dispatch summary Telegram pe aayega automatically.
+                  </p>
+
+                  {/* Status Badge */}
+                  {telegramConfig && (
+                    <div style={{display:'flex', alignItems:'center', gap:'10px', marginBottom:'16px', padding:'10px 14px', borderRadius:'10px', background: telegramConfig.is_active ? '#dcfce7' : '#fef2f2', border: `1px solid ${telegramConfig.is_active ? '#bbf7d0' : '#fecaca'}`}}>
+                      <span style={{fontSize:'20px'}}>{telegramConfig.is_active ? '🟢' : '🔴'}</span>
+                      <div>
+                        <div style={{fontWeight:600, fontSize:'14px', color: telegramConfig.is_active ? '#166534' : '#991b1b'}}>
+                          Bot {telegramConfig.is_active ? 'Active' : 'Inactive'}
+                        </div>
+                        {telegramConfig.last_sent?.time && (
+                          <div style={{fontSize:'11px', color:'#64748b'}}>Last sent: {telegramConfig.last_sent.time}</div>
+                        )}
+                      </div>
+                      <button onClick={toggleTelegram} disabled={telegramLoading}
+                        style={{marginLeft:'auto', padding:'6px 14px', borderRadius:'8px', border:'none', background: telegramConfig.is_active ? '#fecaca' : '#bbf7d0', color: telegramConfig.is_active ? '#991b1b' : '#166534', fontWeight:600, cursor:'pointer', fontSize:'12px'}}>
+                        {telegramConfig.is_active ? '⏸ Pause' : '▶ Start'}
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Setup Form */}
+                  <div style={{background:'#f8fafc', borderRadius:'12px', padding:'16px', border:'1px solid #e2e8f0', marginBottom:'14px'}}>
+                    <h4 style={{margin:'0 0 12px', fontSize:'14px', color:'#334155'}}>⚙️ Setup</h4>
+                    
+                    <div style={{marginBottom:'10px'}}>
+                      <label style={{display:'block', fontSize:'12px', fontWeight:600, color:'#475569', marginBottom:'4px'}}>
+                        Bot Token {telegramConfig?.bot_token_set && <span style={{color:'#22c55e'}}>✓ Set</span>}
+                      </label>
+                      <input type="password" placeholder={telegramConfig?.bot_token_set ? '••••••• (already saved)' : 'Paste bot token from @BotFather'}
+                        value={botToken} onChange={e => setBotToken(e.target.value)}
+                        style={{width:'100%', padding:'8px 12px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'13px', boxSizing:'border-box'}} />
+                    </div>
+
+                    <div style={{marginBottom:'10px'}}>
+                      <label style={{display:'block', fontSize:'12px', fontWeight:600, color:'#475569', marginBottom:'4px'}}>Chat ID / Group ID</label>
+                      <input type="text" placeholder="e.g., -100123456789 or your chat ID"
+                        value={chatId} onChange={e => setChatId(e.target.value)}
+                        style={{width:'100%', padding:'8px 12px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'13px', boxSizing:'border-box'}} />
+                    </div>
+
+                    <div style={{marginBottom:'12px'}}>
+                      <label style={{display:'block', fontSize:'12px', fontWeight:600, color:'#475569', marginBottom:'4px'}}>Interval (minutes)</label>
+                      <select value={botInterval} onChange={e => setBotInterval(Number(e.target.value))}
+                        style={{width:'100%', padding:'8px 12px', borderRadius:'8px', border:'1px solid #cbd5e1', fontSize:'13px'}}>
+                        <option value={30}>30 min</option>
+                        <option value={60}>1 hour</option>
+                        <option value={120}>2 hours</option>
+                        <option value={180}>3 hours</option>
+                        <option value={360}>6 hours</option>
+                        <option value={720}>12 hours</option>
+                      </select>
+                    </div>
+
+                    <div style={{display:'flex', gap:'8px'}}>
+                      <button onClick={saveTelegramConfig} disabled={telegramLoading}
+                        style={{flex:1, padding:'10px', borderRadius:'8px', border:'none', background:'#2563eb', color:'#fff', fontWeight:600, cursor:'pointer', fontSize:'13px'}}>
+                        {telegramLoading ? '⏳ Saving...' : '💾 Save & Activate'}
+                      </button>
+                      <button onClick={testTelegram} disabled={telegramLoading}
+                        style={{padding:'10px 16px', borderRadius:'8px', border:'1px solid #2563eb', background:'#fff', color:'#2563eb', fontWeight:600, cursor:'pointer', fontSize:'13px'}}>
+                        🧪 Test
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Send Now */}
+                  <div style={{background:'#f0f7ff', borderRadius:'12px', padding:'16px', border:'1px solid #bfdbfe', marginBottom:'14px'}}>
+                    <h4 style={{margin:'0 0 10px', fontSize:'14px', color:'#1e40af'}}>📤 Send Now</h4>
+                    <div style={{display:'flex', gap:'8px', flexWrap:'wrap'}}>
+                      <button onClick={() => sendNowTelegram()} disabled={telegramLoading}
+                        style={{padding:'8px 16px', borderRadius:'8px', border:'none', background:'#1d4ed8', color:'#fff', fontWeight:600, cursor:'pointer', fontSize:'12px'}}>
+                        📊 All Companies
+                      </button>
+                      {companies.map(c => (
+                        <button key={c.id} onClick={() => sendNowTelegram(c.id)} disabled={telegramLoading}
+                          style={{padding:'8px 14px', borderRadius:'8px', border:'1px solid #93c5fd', background:'#eff6ff', color:'#1e40af', fontWeight:600, cursor:'pointer', fontSize:'12px'}}>
+                          🏢 {c.company_name?.split(' ')[0]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Message */}
+                  {telegramMsg && (
+                    <div style={{padding:'10px 14px', borderRadius:'8px', marginBottom:'14px', fontSize:'13px', fontWeight:600,
+                      background: telegramMsg.startsWith('✅') ? '#dcfce7' : '#fef2f2',
+                      color: telegramMsg.startsWith('✅') ? '#166534' : '#991b1b',
+                      border: `1px solid ${telegramMsg.startsWith('✅') ? '#bbf7d0' : '#fecaca'}`}}>
+                      {telegramMsg}
+                    </div>
+                  )}
+
+                  {/* Guide */}
+                  <div style={{background:'#fffbeb', borderRadius:'12px', padding:'16px', border:'1px solid #fde68a'}}>
+                    <h4 style={{margin:'0 0 10px', fontSize:'14px', color:'#92400e'}}>📖 Setup Guide</h4>
+                    <ol style={{margin:0, paddingLeft:'18px', fontSize:'12px', color:'#78350f', lineHeight:1.8}}>
+                      <li>Telegram me <strong>@BotFather</strong> search karo</li>
+                      <li><code>/newbot</code> bhejo → naam do → token milega</li>
+                      <li>Token copy karo aur upar paste karo</li>
+                      <li>Bot ko group me add karo ya direct message bhejo</li>
+                      <li>Chat ID ke liye: bot ko msg bhejo, phir open karo:<br/>
+                        <code style={{fontSize:'11px', background:'#fef3c7', padding:'2px 6px', borderRadius:'4px'}}>
+                          https://api.telegram.org/bot&lt;TOKEN&gt;/getUpdates
+                        </code>
+                      </li>
+                      <li>Response me <code>{'"chat":{"id": ...}'}</code> — woh ID paste karo</li>
+                      <li>"Save & Activate" karo → "Test" se check karo</li>
+                    </ol>
+                  </div>
+                </div>
+              )}
 
               {/* Empty state */}
               {pdiWise.length === 0 && (

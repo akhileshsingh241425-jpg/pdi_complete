@@ -101,10 +101,15 @@ const DispatchTracker = () => {
   };
 
   // ====== TELEGRAM BOT FUNCTIONS ======
+  const safeFetch = async (url, opts = {}) => {
+    const resp = await fetch(url, opts);
+    const text = await resp.text();
+    try { return JSON.parse(text); } catch { return { success: false, error: text.substring(0, 100) }; }
+  };
+
   const loadTelegramStatus = async () => {
     try {
-      const resp = await fetch(`${API_BASE_URL}/telegram/status`);
-      const data = await resp.json();
+      const data = await safeFetch(`${API_BASE_URL}/telegram/status`);
       if (data.success) {
         setTelegramConfig(data.config);
         if (data.config.chat_id) setChatId(data.config.chat_id);
@@ -131,10 +136,9 @@ const DispatchTracker = () => {
         companies: companies.map(c => ({ id: c.id, name: c.company_name }))
       };
       if (botToken) body.bot_token = botToken;
-      const resp = await fetch(`${API_BASE_URL}/telegram/setup`, {
+      const data = await safeFetch(`${API_BASE_URL}/telegram/setup`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
-      const data = await resp.json();
       if (data.success) {
         setTelegramMsg('✅ Config saved! Bot is active.');
         setBotToken('');
@@ -149,8 +153,7 @@ const DispatchTracker = () => {
   const testTelegram = async () => {
     setTelegramLoading(true);
     try {
-      const resp = await fetch(`${API_BASE_URL}/telegram/test`, { method: 'POST' });
-      const data = await resp.json();
+      const data = await safeFetch(`${API_BASE_URL}/telegram/test`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       setTelegramMsg(data.success ? '✅ Test message sent! Check Telegram.' : `❌ ${data.error}`);
     } catch (err) { setTelegramMsg(`❌ ${err.message}`); }
     setTelegramLoading(false);
@@ -158,12 +161,12 @@ const DispatchTracker = () => {
 
   const sendNowTelegram = async (companyId) => {
     setTelegramLoading(true);
+    setTelegramMsg('⏳ Sending report... MRP data fetch me 1-2 min lag sakta hai');
     try {
       const body = companyId ? { company_id: companyId } : {};
-      const resp = await fetch(`${API_BASE_URL}/telegram/send-now`, {
+      const data = await safeFetch(`${API_BASE_URL}/telegram/send-now`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
       });
-      const data = await resp.json();
       setTelegramMsg(data.success ? '✅ Report sent to Telegram!' : `❌ ${data.error}`);
     } catch (err) { setTelegramMsg(`❌ ${err.message}`); }
     setTelegramLoading(false);
@@ -171,8 +174,7 @@ const DispatchTracker = () => {
 
   const toggleTelegram = async () => {
     try {
-      const resp = await fetch(`${API_BASE_URL}/telegram/toggle`, { method: 'POST' });
-      const data = await resp.json();
+      const data = await safeFetch(`${API_BASE_URL}/telegram/toggle`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       setTelegramMsg(data.success ? `✅ Bot ${data.is_active ? 'activated' : 'deactivated'}` : `❌ ${data.error}`);
       loadTelegramStatus();
     } catch (err) { setTelegramMsg(`❌ ${err.message}`); }

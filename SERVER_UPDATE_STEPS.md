@@ -1,16 +1,40 @@
 # Server Pe Code Update Karne Ke Steps
 
-## Method 1: SSH se Pull karo (Recommended)
+## Server Details
+- **IP:** 93.127.194.235
+- **User:** root
+- **Project Path:** /root/ipqc
+- **Process Manager:** PM2
+- **Backend PM2 Name:** pdi-backend
+- **Frontend PM2 Name:** pdi-frontend
+- **Git Remote:** origin (https://github.com/akhileshsingh241425-jpg/pdi_complete.git)
+- **Branch:** main
 
-### 1. SSH se server connect karo
+---
+
+## QUICK DEPLOY - Copy-Paste (Server Terminal Me)
+
 ```bash
-ssh username@103.108.220.227
-# Ya Hostinger SSH terminal use karo (cPanel -> Terminal)
+cd /root/ipqc
+git pull origin main
+cd frontend && npm run build
+cd ..
+pm2 restart pdi-backend pdi-frontend
+echo "✓ Deploy complete!"
 ```
 
-### 2. API folder me jao
+---
+
+## Step-by-Step Method
+
+### 1. SSH se connect karo
 ```bash
-cd ~/public_html/api
+ssh root@93.127.194.235
+```
+
+### 2. Project folder me jao
+```bash
+cd /root/ipqc
 ```
 
 ### 3. Git pull karo
@@ -18,113 +42,62 @@ cd ~/public_html/api
 git pull origin main
 ```
 
-### 4. Python dependencies update karo (agar naye packages hain)
+### 4. Frontend build karo (agar frontend changes hain)
 ```bash
-source ~/virtualenv/public_html/api/3.9/bin/activate
-pip install -r requirements.txt
+cd frontend
+npm run build
+cd ..
 ```
 
-### 5. Database migrations run karo (agar naye tables/columns hain)
+### 5. Backend dependencies update karo (agar naye packages hain)
 ```bash
-python add_shift_ipqc_columns.py
-python add_coc_tracking_table.py
+pip install -r backend/requirements.txt
 ```
 
-### 6. Application restart karo
+### 6. PM2 restart karo
 ```bash
-touch tmp/restart.txt
-# Ya
-mkdir -p tmp && touch tmp/restart.txt
+pm2 restart pdi-backend pdi-frontend
 ```
 
-### 7. Uploads folder fix karo (ek baar)
+### 7. Check karo sab chal raha hai
 ```bash
-bash ../fix_uploads_access.sh
-# Ya manually:
-mkdir -p uploads/bom_materials
-chmod 755 uploads uploads/bom_materials
-chmod 644 .htaccess uploads/.htaccess
-```
-
----
-
-## Method 2: Frontend Update (agar frontend changes hain)
-
-### 1. Frontend folder me jao
-```bash
-cd ~/public_html
-```
-
-### 2. Pull karo (agar yahan bhi git repo hai)
-```bash
-git pull origin main
-```
-
-### 3. Ya manually upload karo
-- Local pe: `npm run build`
-- Upload `frontend/build/*` files to `~/public_html/`
-
----
-
-## Quick Commands (Copy-Paste for Server Terminal)
-
-```bash
-# Backend update
-cd ~/public_html/api
-git pull origin main
-source ~/virtualenv/public_html/api/3.9/bin/activate
-pip install -r requirements.txt
-mkdir -p tmp && touch tmp/restart.txt
-
-# Uploads fix (ek baar)
-mkdir -p uploads/bom_materials uploads/ipqc_pdfs uploads/ftr_documents uploads/ftr_reports uploads/iv_graphs
-chmod 755 uploads uploads/bom_materials uploads/ipqc_pdfs uploads/ftr_documents uploads/ftr_reports uploads/iv_graphs
-chmod 644 .htaccess uploads/.htaccess
-
-echo "✓ Server updated successfully!"
+pm2 status
 ```
 
 ---
 
 ## Troubleshooting
 
-### Git pull nahi ho raha?
+### Git pull nahi ho raha / conflict aa raha?
 ```bash
-# Check git status
-git status
-
-# Agar changes hain toh stash karo
+cd /root/ipqc
 git stash
 git pull origin main
+```
 
-# Ya force pull
+### Ya force pull (WARNING: local changes jayenge)
+```bash
+cd /root/ipqc
 git fetch origin
 git reset --hard origin/main
 ```
 
-### Permission errors?
+### PM2 process crash ho raha?
 ```bash
-chmod 755 uploads
-chmod 644 .htaccess
+pm2 logs pdi-backend --lines 50
+pm2 logs pdi-frontend --lines 50
 ```
 
-### Application restart nahi ho raha?
+### Sab PM2 processes dekhne ke liye
 ```bash
-# Force restart
-touch tmp/restart.txt
-# Wait 2-3 seconds, then check
-curl http://103.108.220.227/api/health
+pm2 status
 ```
 
-### Database migration errors?
+### Frontend build error?
 ```bash
-# Check Python environment
-which python
-python --version
-
-# Activate venv first
-source ~/virtualenv/public_html/api/3.9/bin/activate
-python add_shift_ipqc_columns.py
+cd /root/ipqc/frontend
+npm install
+npm run build
 ```
 
 ---

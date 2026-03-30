@@ -2,10 +2,9 @@ import React from 'react';
 import '../styles/RFIDTemplate.css';
 
 const RFIDTemplate = ({ testData, graphImage }) => {
-  // Specification table rows
   const specRows = [
     { sno: 1, spec: 'Name of the Manufacturer of PV Module', value: testData.pvManufacturer || 'Gautam Solar Private Limited' },
-    { sno: 2, spec: 'Name of the Manufacturer of Solar Cell', value: testData.cellManufacturer || 'Solar Space' },
+    { sno: 2, spec: 'Name of the Manufacturer of Solar Cell', value: testData.cellManufacturer || 'SOLAR SPACE' },
     { sno: 3, spec: 'Module Type', value: testData.moduleType || 'G2G' },
     { sno: 4, spec: 'Month & Year of the Manufacture of Module', value: testData.moduleManufactureDate || '' },
     { sno: 5, spec: 'Month & Year of the Manufacture of Solar Cell', value: testData.cellManufactureDate || '' },
@@ -22,68 +21,68 @@ const RFIDTemplate = ({ testData, graphImage }) => {
   ];
 
   return (
-    <div className="rfid-template-page">
-      {/* Company Header */}
-      <div className="rfid-header">
-        <div className="rfid-header-left">
-          <div className="rfid-company-name">Gautam Solar Private Limited</div>
-          <div className="rfid-address">7 Km Milestone, Tosham Road</div>
-          <div className="rfid-address">Dist. Bhiwani</div>
-          <div className="rfid-address">Bawani Khera</div>
-          <div className="rfid-address">HR 127032</div>
-        </div>
-        <div className="rfid-header-right">
-          <img src="/gautam-solar-logo.jpg" alt="Gautam Solar" className="rfid-logo" />
-        </div>
-      </div>
+    <div className="rfid-page">
+      {/* Logo + Company Header */}
+      <table className="rfid-header-table">
+        <tbody>
+          <tr>
+            <td className="rfid-header-logo-cell">
+              <img src="/gautam-solar-logo.png" alt="Gautam Solar" className="rfid-logo" />
+            </td>
+            <td className="rfid-header-info-cell">
+              <div className="rfid-company-name">Gautam Solar Private Limited</div>
+              <div className="rfid-company-addr">7 km Milestone, Tosham Road</div>
+              <div className="rfid-company-addr">Dist. Bhiwani</div>
+              <div className="rfid-company-addr">Bawani Khera HR 127032</div>
+              <div className="rfid-company-addr">India</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      {/* Module Serial Info */}
-      <div className="rfid-serial-section">
-        <div className="rfid-serial-row">
+      {/* Serial Number & TID */}
+      <div className="rfid-serial-block">
+        <div className="rfid-serial-line">
           <span className="rfid-serial-label">Module Serial Number:</span>
-          <span className="rfid-serial-value">{testData.serialNumber || ''}</span>
+          <span className="rfid-serial-val">{testData.serialNumber || ''}</span>
         </div>
-        <div className="rfid-serial-row">
+        <div className="rfid-serial-line">
           <span className="rfid-serial-label">TID:</span>
-          <span className="rfid-serial-value">{testData.tid || ''}</span>
+          <span className="rfid-serial-val">{testData.tid || ''}</span>
         </div>
       </div>
 
-      {/* Detailed Specification Label */}
-      <div className="rfid-detail-label">Detailed Specification:</div>
+      {/* Detailed Specification underlined heading */}
+      <div className="rfid-spec-heading">Detailed Specification:</div>
 
       {/* Specification Table */}
-      <div className="rfid-table-container">
-        <table className="rfid-spec-table">
-          <thead>
-            <tr>
-              <th className="rfid-th-sno">S/no.</th>
-              <th className="rfid-th-spec">Specification</th>
-              <th className="rfid-th-value">Values</th>
+      <table className="rfid-spec-table">
+        <thead>
+          <tr>
+            <th className="rfid-col-sno"><u>S/no.</u></th>
+            <th className="rfid-col-spec"><u>Specification</u></th>
+            <th className="rfid-col-val"><u>Values</u></th>
+          </tr>
+        </thead>
+        <tbody>
+          {specRows.map((row) => (
+            <tr key={row.sno}>
+              <td className="rfid-cell-sno">{row.sno}</td>
+              <td className="rfid-cell-spec">{row.spec}</td>
+              <td className="rfid-cell-val">{row.value}</td>
             </tr>
-          </thead>
-          <tbody>
-            {specRows.map((row) => (
-              <tr key={row.sno}>
-                <td className="rfid-td-sno">{row.sno}</td>
-                <td className="rfid-td-spec">{row.spec}</td>
-                <td className="rfid-td-value">{row.value}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+          ))}
+        </tbody>
+      </table>
 
-      {/* IV Characteristics Section */}
-      <div className="rfid-iv-section">
-        <div className="rfid-iv-title">IV Characterstics of the Module:</div>
-        <div className="rfid-graph-container">
-          {graphImage ? (
-            <img src={graphImage} alt="IV Characteristics" className="rfid-graph-image" />
-          ) : (
-            <div className="rfid-graph-placeholder">IV Curve Graph not available</div>
-          )}
-        </div>
+      {/* IV Characteristics */}
+      <div className="rfid-iv-heading">IV Characterstics of the Module:</div>
+      <div className="rfid-graph-box">
+        {graphImage ? (
+          <img src={graphImage} alt="IV Characteristics" className="rfid-graph-img" />
+        ) : (
+          <div className="rfid-graph-empty">IV Curve Graph not available</div>
+        )}
       </div>
     </div>
   );

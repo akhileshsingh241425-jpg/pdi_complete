@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, send_file
 import os
 import base64
 from datetime import datetime
@@ -7,7 +7,14 @@ from werkzeug.utils import secure_filename
 rfid_upload_bp = Blueprint('rfid_upload', __name__)
 
 RFID_UPLOAD_FOLDER = os.path.join(os.path.dirname(__file__), '../../uploads/rfid_reports')
+RFID_GRAPHS_FOLDER = os.path.join(os.path.dirname(__file__), '../../uploads/rfid_graphs')
 os.makedirs(RFID_UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(RFID_GRAPHS_FOLDER, exist_ok=True)
+
+ALLOWED_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+
+def allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
 @rfid_upload_bp.route('/api/rfid/upload-bulk', methods=['POST'])

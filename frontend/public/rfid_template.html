@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>RFID Report Template</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 0;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto;
+            padding: 10mm 12mm 10mm 12mm;
+            font-family: 'Times New Roman', Times, serif;
+            color: #000;
+            background: #fff;
+        }
+
+        /* Header */
+        .header-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 4mm;
+        }
+        .header-table td {
+            border: none;
+            vertical-align: middle;
+            padding: 0;
+        }
+        .logo-cell { width: 42%; }
+        .logo-cell img { width: 55mm; height: auto; }
+        .info-cell { width: 58%; padding-left: 3mm; }
+        .company-name {
+            font-size: 14pt;
+            font-weight: 700;
+            color: #000;
+            margin-bottom: 1px;
+        }
+        .company-addr {
+            font-size: 9pt;
+            font-weight: 700;
+            font-style: italic;
+            color: #000;
+            line-height: 1.45;
+        }
+
+        /* Serial Section */
+        .serial-block { margin: 2mm 0 3mm 0; }
+        .serial-line { margin-bottom: 0.5mm; }
+        .serial-label {
+            font-size: 9.5pt;
+            font-weight: 700;
+            margin-right: 2mm;
+        }
+        .serial-val { font-size: 9.5pt; }
+
+        /* Spec Heading */
+        .spec-heading {
+            font-size: 9.5pt;
+            font-weight: 700;
+            color: #dd0000;
+            text-decoration: underline;
+            margin-bottom: 2mm;
+        }
+
+        /* Spec Table */
+        .spec-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9pt;
+            margin-bottom: 3mm;
+        }
+        .spec-table thead tr { background: #e8e8e8; }
+        .spec-table th {
+            border: 0.5pt solid #000;
+            padding: 2pt 4pt;
+            font-weight: 700;
+            font-size: 9pt;
+            text-align: left;
+        }
+        .spec-table th u { text-decoration: underline; }
+        .col-sno { width: 7%; text-align: center; }
+        .col-spec { width: 58%; }
+        .col-val { width: 35%; }
+        .spec-table td {
+            border: 0.5pt solid #000;
+            padding: 1.5pt 4pt;
+            font-size: 9pt;
+            line-height: 1.35;
+        }
+        .td-sno { text-align: center; }
+
+        /* IV Section */
+        .iv-heading {
+            font-size: 9.5pt;
+            font-weight: 700;
+            color: #dd0000;
+            text-decoration: underline;
+            margin: 2mm 0 2mm 0;
+        }
+        .graph-box {
+            width: 100%;
+            height: 82mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px dashed #ccc;
+        }
+        .graph-box img {
+            max-width: 100%;
+            max-height: 82mm;
+            object-fit: contain;
+        }
+        .graph-placeholder {
+            color: #999;
+            font-size: 11pt;
+        }
+
+        @media print {
+            body { margin: 0; padding: 10mm 12mm; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header: Logo + Company Info -->
+    <table class="header-table">
+        <tr>
+            <td class="logo-cell">
+                <img src="gautam-solar-logo.png" alt="Gautam Solar">
+            </td>
+            <td class="info-cell">
+                <div class="company-name">Gautam Solar Private Limited</div>
+                <div class="company-addr">7 km Milestone, Tosham Road</div>
+                <div class="company-addr">Dist. Bhiwani</div>
+                <div class="company-addr">Bawani Khera HR 127032</div>
+                <div class="company-addr">India</div>
+            </td>
+        </tr>
+    </table>
+
+    <!-- Serial Number & TID -->
+    <div class="serial-block">
+        <div class="serial-line">
+            <span class="serial-label">Module Serial Number:</span>
+            <span class="serial-val">GS04890TG0802621905</span>
+        </div>
+        <div class="serial-line">
+            <span class="serial-label">TID:</span>
+            <span class="serial-val">E28038212006021544S7215</span>
+        </div>
+    </div>
+
+    <!-- Detailed Specification -->
+    <div class="spec-heading">Detailed Specification:</div>
+
+    <table class="spec-table">
+        <thead>
+            <tr>
+                <th class="col-sno"><u>S/no.</u></th>
+                <th class="col-spec"><u>Specification</u></th>
+                <th class="col-val"><u>Values</u></th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr><td class="td-sno">1</td><td>Name of the Manufacturer of PV Module</td><td>Gautam Solar Private Limited</td></tr>
+            <tr><td class="td-sno">2</td><td>Name of the Manufacturer of Solar Cell</td><td>SOLAR SPACE</td></tr>
+            <tr><td class="td-sno">3</td><td>Module Type</td><td>G2G</td></tr>
+            <tr><td class="td-sno">4</td><td>Month &amp; Year of the Manufacture of Module</td><td>Mar,26</td></tr>
+            <tr><td class="td-sno">5</td><td>Month &amp; Year of the Manufacture of Solar Cell</td><td>Dec,25</td></tr>
+            <tr><td class="td-sno">6</td><td>Country of Origin for PV Module</td><td>India</td></tr>
+            <tr><td class="td-sno">7</td><td>Country of Origin for Solar Cell</td><td>Laos</td></tr>
+            <tr><td class="td-sno">8</td><td>Power: P-Max of the Module</td><td>631.807647</td></tr>
+            <tr><td class="td-sno">9</td><td>Voltage: V-Max of the Module</td><td>40.936872</td></tr>
+            <tr><td class="td-sno">10</td><td>Current: I-Max of the Module</td><td>15.433706</td></tr>
+            <tr><td class="td-sno">11</td><td>Fill Factor (FF) of the Module</td><td>79.196495</td></tr>
+            <tr><td class="td-sno">12</td><td>VOC</td><td>48.871852</td></tr>
+            <tr><td class="td-sno">13</td><td>ISC</td><td>16.323757</td></tr>
+            <tr><td class="td-sno">14</td><td>Name of The Test Lab Issuing IEC Certificate</td><td>DTH</td></tr>
+            <tr><td class="td-sno">15</td><td>Date of Obtaining IEC Certificate</td><td>18/01/2025</td></tr>
+        </tbody>
+    </table>
+
+    <!-- IV Characteristics -->
+    <div class="iv-heading">IV Characterstics of the Module:</div>
+    <div class="graph-box">
+        <span class="graph-placeholder">[IV Curve Graph Will Be Placed Here]</span>
+    </div>
+
+</body>
+</html>

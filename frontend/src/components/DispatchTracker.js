@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { companyService } from '../services/apiService';
 import '../styles/DispatchTracker.css';
 import * as XLSX from 'xlsx';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 const API_BASE_URL = window.location.hostname === 'localhost' 
   ? 'http://localhost:5003/api' 
@@ -23,8 +22,6 @@ const MAIN_PARTY_GROUPS = {
     subParties: ['LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T']
   }
 };
-
-const CHART_COLORS = ['#22c55e', '#f59e0b', '#ef4444', '#d946ef', '#06b6d4', '#8b5cf6']; // eslint-disable-line no-unused-vars
 
 const DispatchTracker = () => {
   const [companies, setCompanies] = useState([]);
@@ -305,21 +302,6 @@ const DispatchTracker = () => {
   const extraDispatched = productionData?.extra_dispatched || { count: 0, serials: [], pallet_groups: [] };
   const extraPacked = productionData?.extra_packed || { count: 0, serials: [], pallet_groups: [] };
 
-  // Donut chart data
-  const pieData = totalFtrAssigned > 0 ? [
-    { name: 'Dispatched', value: totalDispatched, color: '#22c55e' },
-    { name: 'Packed', value: totalPacked, color: '#f59e0b' },
-    { name: 'Not Packed', value: totalDispPending, color: '#ef4444' },
-  ].filter(d => d.value > 0) : [];
-
-  // PDI-wise bar chart data
-  const barData = pdiWise.slice(0, 15).map(pdi => ({
-    name: pdi.pdi_number?.replace(/PDI[-_]?/i, 'P') || '?',
-    Dispatched: pdi.dispatched || 0,
-    Packed: pdi.packed || 0,
-    'Not Packed': pdi.dispatch_pending || pdi.not_packed || 0,
-  }));
-
   // Vehicle/Invoice-wise dispatch grouping
   const vehicleGroups = {};
   pdiWise.forEach(pdi => {
@@ -365,6 +347,138 @@ const DispatchTracker = () => {
   const dispatchMatches = debugInfo.dispatch_matches || 0;
   const packedMatches = debugInfo.packed_matches || 0;
   const matchRate = localTotal > 0 ? Math.round(((dispatchMatches + packedMatches) / localTotal) * 100) : 0;
+
+  // ====== AI INSIGHTS ENGINE ======
+  const generateInsights = () => {
+    if (!productionData || totalFtrAssigned === 0) return [];
+    const insights = [];
+    const dispatchPct = Math.round((totalDispatched / totalFtrAssigned) * 100);
+    const packedPct = Math.round((totalPacked / totalFtrAssigned) * 100);
+    const pendingPct = Math.round((totalDispPending / totalFtrAssigned) * 100);
+
+    // 1. Completion prediction
+    if (totalDispatched > 0 && dateList.length >= 2) {
+      const sortedDates = [...dateList].sort((a, b) => a.date.localeCompare(b.date));
+      const totalDays = sortedDates.length;
+      const avgPerDay = Math.round(totalDispatched / totalDays);
+      const remaining = totalPacked + totalDispPending;
+      if (avgPerDay > 0 && remaining > 0) {
+        const daysLeft = Math.ceil(remaining / avgPerDay);
+        const eta = new Date();
+        eta.setDate(eta.getDate() + daysLeft);
+        insights.push({
+          type: 'prediction',
+          icon: '🤖',
+          title: 'Dispatch Completion ETA',
+          text: `Average ${avgPerDay.toLocaleString()} modules/day dispatched. At this rate, remaining ${remaining.toLocaleString()} modules will complete in ~${daysLeft} days (${eta.toLocaleDateString('en-IN', {day: 'numeric', month: 'short', year: 'numeric'})}).`,
+          severity: daysLeft > 30 ? 'warning' : 'success'
+        });
+      }
+    }
+
+    // 2. Packed bottleneck
+    if (totalPacked > 0) {
+      insights.push({
+        type: 'bottleneck',
+        icon: '📦',
+        title: `${totalPacked.toLocaleString()} Modules Stuck in Packed`,
+        text: `${packedPct}% of assigned modules are packed but NOT dispatched. These are ready to go — dispatching them will bring dispatch % from ${dispatchPct}% to ${dispatchPct + packedPct}%.`,
+        severity: packedPct > 20 ? 'critical' : packedPct > 10 ? 'warning' : 'info'
+      });
+    }
+
+    // 3. Not packed alert
+    if (totalDispPending > 0) {
+      insights.push({
+        type: 'alert',
+        icon: '⏳',
+        title: `${totalDispPending.toLocaleString()} Modules Not Yet Packed`,
+        text: `${pendingPct}% modules haven't entered packing. These need to be packed first before dispatch. ${totalPacked > 0 ? `Focus: Pack these ${totalDispPending.toLocaleString()} + dispatch the ${totalPacked.toLocaleString()} already packed = 0 pending.` : 'Priority: Start packing immediately.'}`,
+        severity: pendingPct > 30 ? 'critical' : 'warning'
+      });
+    }
+
+    // 4. Zero pending celebration
+    if (totalDispPending === 0 && totalPacked === 0 && totalDispatched > 0) {
+      insights.push({
+        type: 'success',
+        icon: '🎉',
+        title: '100% Dispatch Complete!',
+        text: `All ${totalDispatched.toLocaleString()} modules have been dispatched. No pending items.`,
+        severity: 'success'
+      });
+    }
+
+    // 5. Extra dispatched anomaly
+    if (extraDispatched.count > 0) {
+      const extraPct = totalFtrAssigned > 0 ? Math.round((extraDispatched.count / totalFtrAssigned) * 100) : 0;
+      insights.push({
+        type: 'anomaly',
+        icon: '🔀',
+        title: `${extraDispatched.count.toLocaleString()} Extra Modules in MRP`,
+        text: `MRP shows ${extraDispatched.count.toLocaleString()} dispatched serials not in your PDI records (${extraPct}% of assigned). ${extraDispatched.count > 100 ? 'Likely: PDI serial uploads are incomplete, or modules were dispatched from a different batch.' : 'Check if these belong to a different order or are re-dispatches.'}`,
+        severity: extraPct > 20 ? 'critical' : 'warning'
+      });
+    }
+
+    // 6. Data mismatch detection
+    if (matchRate < 50 && localTotal > 0) {
+      insights.push({
+        type: 'mismatch',
+        icon: '🔴',
+        title: 'Serial Format Mismatch Detected',
+        text: `Only ${matchRate}% of your PDI serials match MRP. ${debugInfo.sample_local_serials?.[0] && debugInfo.sample_mrp_barcodes?.[0] ? `Your format: "${debugInfo.sample_local_serials[0]}" vs MRP: "${debugInfo.sample_mrp_barcodes[0]}". Fix the import format to resolve dispatch tracking.` : 'Check that serial numbers uploaded match MRP barcode format exactly (case, spaces, prefixes).'}`,
+        severity: 'critical'
+      });
+    }
+
+    // 7. PDI-wise stuck detection
+    const stuckPdis = pdiWise.filter(pdi => (pdi.dispatched || 0) === 0 && (pdi.packed || 0) === 0 && (pdi.ftr_tested || 0) > 0);
+    if (stuckPdis.length > 0) {
+      const stuckModules = stuckPdis.reduce((sum, p) => sum + (p.ftr_tested || 0), 0);
+      insights.push({
+        type: 'alert',
+        icon: '🚫',
+        title: `${stuckPdis.length} PDI(s) with Zero Dispatch & Zero Packing`,
+        text: `${stuckPdis.map(p => p.pdi_number).join(', ')} — total ${stuckModules.toLocaleString()} modules have no packing or dispatch activity. These may be blocked or not yet started.`,
+        severity: 'warning'
+      });
+    }
+
+    // 8. Production vs Dispatch gap
+    if (totalProduced > 0 && totalFtrAssigned > 0) {
+      const prodVsDisp = totalProduced - totalDispatched;
+      if (prodVsDisp > 0) {
+        insights.push({
+          type: 'gap',
+          icon: '📊',
+          title: `Production-Dispatch Gap: ${prodVsDisp.toLocaleString()} modules`,
+          text: `Produced: ${totalProduced.toLocaleString()} | Dispatched: ${totalDispatched.toLocaleString()}. Gap of ${prodVsDisp.toLocaleString()} modules between production and dispatch. Packed: ${totalPacked.toLocaleString()} + Not Packed: ${totalDispPending.toLocaleString()} = ${(totalPacked + totalDispPending).toLocaleString()} in pipeline.`,
+          severity: 'info'
+        });
+      }
+    }
+
+    // 9. Last dispatch activity warning  
+    if (dateList.length > 0) {
+      const lastDate = new Date(dateList[0].date);
+      const today = new Date();
+      const daysSince = Math.floor((today - lastDate) / (1000 * 60 * 60 * 24));
+      if (daysSince > 3 && totalDispPending + totalPacked > 0) {
+        insights.push({
+          type: 'inactivity',
+          icon: '💤',
+          title: `No Dispatch in ${daysSince} Days`,
+          text: `Last dispatch was on ${dateList[0].date} (${daysSince} days ago). ${totalPacked > 0 ? `${totalPacked.toLocaleString()} packed modules are ready — dispatch is stalling.` : `${totalDispPending.toLocaleString()} modules still need packing.`}`,
+          severity: daysSince > 7 ? 'critical' : 'warning'
+        });
+      }
+    }
+
+    return insights;
+  };
+
+  const aiInsights = generateInsights();
 
   // Format countdown
   const formatCountdown = (secs) => {
@@ -742,78 +856,43 @@ const DispatchTracker = () => {
                 )}
               </div>
 
-              {/* ====== CHARTS SECTION ====== */}
-              {totalFtrAssigned > 0 && (
-                <div style={{display: 'grid', gridTemplateColumns: 'minmax(280px, 1fr) minmax(350px, 2fr)', gap: '16px', marginBottom: '16px'}}>
-                  {/* Donut Chart */}
-                  <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'}}>
-                    <h4 style={{margin: '0 0 8px', fontSize: '14px', color: '#334155', fontWeight: 700}}>📊 Dispatch Overview</h4>
-                    <ResponsiveContainer width="100%" height={220}>
-                      <PieChart>
-                        <Pie data={pieData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={({name, value, percent}) => `${name}: ${value.toLocaleString()} (${(percent*100).toFixed(0)}%)`}>
-                          {pieData.map((entry, index) => (
-                            <Cell key={index} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip formatter={(value) => value.toLocaleString()} />
-                      </PieChart>
-                    </ResponsiveContainer>
+              {/* ====== AI INSIGHTS PANEL ====== */}
+              {aiInsights.length > 0 && (
+                <div style={{background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', borderRadius: '14px', padding: '16px 18px', marginBottom: '14px', border: '1px solid #334155'}}>
+                  <div style={{display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px'}}>
+                    <span style={{fontSize: '20px'}}>🤖</span>
+                    <span style={{fontSize: '15px', fontWeight: 700, color: '#e2e8f0', letterSpacing: '0.5px'}}>AI Insights</span>
+                    <span style={{fontSize: '10px', color: '#94a3b8', background: '#334155', padding: '2px 8px', borderRadius: '10px', fontWeight: 600}}>
+                      {aiInsights.length} findings
+                    </span>
+                    {localTotal > 0 && (
+                      <span style={{marginLeft: 'auto', fontSize: '11px', padding: '3px 10px', borderRadius: '10px', fontWeight: 700,
+                        background: matchRate >= 80 ? 'rgba(34,197,94,0.2)' : matchRate >= 50 ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)',
+                        color: matchRate >= 80 ? '#4ade80' : matchRate >= 50 ? '#fbbf24' : '#f87171',
+                        border: `1px solid ${matchRate >= 80 ? 'rgba(34,197,94,0.3)' : matchRate >= 50 ? 'rgba(245,158,11,0.3)' : 'rgba(239,68,68,0.3)'}`
+                      }}>
+                        Data Health: {matchRate}%
+                      </span>
+                    )}
                   </div>
-                  {/* Bar Chart — PDI-wise */}
-                  {barData.length > 0 && (
-                    <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', boxShadow: '0 2px 8px rgba(0,0,0,0.04)'}}>
-                      <h4 style={{margin: '0 0 8px', fontSize: '14px', color: '#334155', fontWeight: 700}}>📈 PDI-wise Breakdown</h4>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <BarChart data={barData} margin={{top: 5, right: 10, left: 0, bottom: 5}}>
-                          <XAxis dataKey="name" tick={{fontSize: 11}} />
-                          <YAxis tick={{fontSize: 11}} />
-                          <Tooltip formatter={(value) => value.toLocaleString()} />
-                          <Legend iconSize={10} wrapperStyle={{fontSize: 11}} />
-                          <Bar dataKey="Dispatched" stackId="a" fill="#22c55e" />
-                          <Bar dataKey="Packed" stackId="a" fill="#f59e0b" />
-                          <Bar dataKey="Not Packed" stackId="a" fill="#ef4444" />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* ====== DATA HEALTH PANEL ====== */}
-              {localTotal > 0 && (
-                <div style={{background: matchRate >= 80 ? '#f0fdf4' : matchRate >= 50 ? '#fffbeb' : '#fef2f2', border: `1px solid ${matchRate >= 80 ? '#86efac' : matchRate >= 50 ? '#fcd34d' : '#fca5a5'}`, borderRadius: '10px', padding: '12px 16px', marginBottom: '12px'}}>
-                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px'}}>
-                    <div style={{display: 'flex', alignItems: 'center', gap: '10px'}}>
-                      <span style={{fontSize: '18px'}}>{matchRate >= 80 ? '✅' : matchRate >= 50 ? '⚠️' : '🔴'}</span>
-                      <div>
-                        <div style={{fontSize: '13px', fontWeight: 700, color: '#1e293b'}}>Data Health: {matchRate}% Match</div>
-                        <div style={{fontSize: '11px', color: '#64748b'}}>
-                          Local PDI: {localTotal.toLocaleString()} | MRP Dispatch: {mrpDispatchTotal.toLocaleString()} | MRP Packed: {mrpPackedTotal.toLocaleString()}
+                  <div style={{display: 'flex', flexDirection: 'column', gap: '8px'}}>
+                    {aiInsights.map((insight, i) => (
+                      <div key={i} style={{
+                        background: insight.severity === 'critical' ? 'rgba(239,68,68,0.1)' : insight.severity === 'warning' ? 'rgba(245,158,11,0.1)' : insight.severity === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(59,130,246,0.08)',
+                        border: `1px solid ${insight.severity === 'critical' ? 'rgba(239,68,68,0.25)' : insight.severity === 'warning' ? 'rgba(245,158,11,0.25)' : insight.severity === 'success' ? 'rgba(34,197,94,0.25)' : 'rgba(59,130,246,0.2)'}`,
+                        borderRadius: '10px', padding: '10px 14px',
+                        borderLeft: `4px solid ${insight.severity === 'critical' ? '#ef4444' : insight.severity === 'warning' ? '#f59e0b' : insight.severity === 'success' ? '#22c55e' : '#3b82f6'}`
+                      }}>
+                        <div style={{display: 'flex', gap: '8px', alignItems: 'flex-start'}}>
+                          <span style={{fontSize: '16px', flexShrink: 0}}>{insight.icon}</span>
+                          <div>
+                            <div style={{fontSize: '13px', fontWeight: 700, color: '#f1f5f9', marginBottom: '3px'}}>{insight.title}</div>
+                            <div style={{fontSize: '12px', color: '#cbd5e1', lineHeight: 1.5}}>{insight.text}</div>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
-                      <span style={{background: '#dcfce7', color: '#166534', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600}}>
-                        Dispatch Match: {dispatchMatches.toLocaleString()}
-                      </span>
-                      <span style={{background: '#fef9c3', color: '#854d0e', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600}}>
-                        Packed Match: {packedMatches.toLocaleString()}
-                      </span>
-                      {extraDispatched.count > 0 && (
-                        <span style={{background: '#f5d0fe', color: '#86198f', padding: '3px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600}}>
-                          Extra in MRP: {extraDispatched.count.toLocaleString()}
-                        </span>
-                      )}
-                    </div>
+                    ))}
                   </div>
-                  {/* Debug sample serials */}
-                  {debugInfo.sample_local_serials?.length > 0 && debugInfo.sample_mrp_barcodes?.length > 0 && matchRate < 50 && (
-                    <div style={{marginTop: '8px', padding: '8px 10px', background: 'rgba(255,255,255,0.7)', borderRadius: '6px', fontSize: '11px', color: '#475569'}}>
-                      <div><strong>Local sample:</strong> <span style={{fontFamily: 'monospace'}}>{debugInfo.sample_local_serials.slice(0, 3).join(', ')}</span></div>
-                      <div><strong>MRP sample:</strong> <span style={{fontFamily: 'monospace'}}>{debugInfo.sample_mrp_barcodes.slice(0, 3).join(', ')}</span></div>
-                      <div style={{color: '#dc2626', fontWeight: 600, marginTop: '4px'}}>⚠️ Format mismatch detected — check serial number format in PDI uploads vs MRP system</div>
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -1372,19 +1451,27 @@ const DispatchTracker = () => {
                         Last dispatch: <strong style={{color: '#16a34a'}}>{dateList[0]?.date}</strong> ({dateList[0]?.count.toLocaleString()} modules)
                         {dateList.length > 1 && <> | First: <strong>{dateList[dateList.length - 1]?.date}</strong> | Total days: <strong>{dateList.length}</strong></>}
                       </div>
-                      {/* Timeline bar chart */}
-                      {dateList.length > 1 && (
-                        <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px'}}>
-                          <ResponsiveContainer width="100%" height={250}>
-                            <BarChart data={[...dateList].reverse().slice(-30)} margin={{top: 5, right: 10, left: 0, bottom: 5}}>
-                              <XAxis dataKey="date" tick={{fontSize: 10}} angle={-45} textAnchor="end" height={60} />
-                              <YAxis tick={{fontSize: 11}} />
-                              <Tooltip formatter={(value) => value.toLocaleString()} />
-                              <Bar dataKey="count" fill="#22c55e" name="Modules" radius={[4, 4, 0, 0]} />
-                            </BarChart>
-                          </ResponsiveContainer>
-                        </div>
-                      )}
+                      {/* Timeline visual bars (pure CSS) */}
+                      {dateList.length > 1 && (() => {
+                        const last30 = [...dateList].reverse().slice(-30);
+                        const maxCount = Math.max(...last30.map(d => d.count));
+                        return (
+                          <div style={{background: '#fff', borderRadius: '12px', padding: '16px', border: '1px solid #e2e8f0', marginBottom: '16px'}}>
+                            <div style={{display: 'flex', alignItems: 'flex-end', gap: '3px', height: '120px'}}>
+                              {last30.map((d, i) => (
+                                <div key={i} style={{flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%'}} title={`${d.date}: ${d.count} modules`}>
+                                  <div style={{fontSize: '9px', color: '#64748b', marginBottom: '2px', writingMode: last30.length > 15 ? 'vertical-rl' : 'horizontal-tb', whiteSpace: 'nowrap'}}>{d.count}</div>
+                                  <div style={{width: '100%', maxWidth: '30px', borderRadius: '3px 3px 0 0', background: 'linear-gradient(180deg, #22c55e, #16a34a)', height: `${maxCount > 0 ? (d.count / maxCount) * 90 : 0}%`, minHeight: '4px', transition: 'height 0.3s'}}></div>
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '6px', fontSize: '10px', color: '#94a3b8'}}>
+                              <span>{last30[0]?.date}</span>
+                              <span>{last30[last30.length - 1]?.date}</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
                       {/* Timeline Table */}
                       <div className="pallet-table-container">
                         <table className="pallet-table" style={{fontSize: '12px'}}>

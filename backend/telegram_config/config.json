@@ -1,0 +1,13 @@
+{
+  "bot_token": "8677504994:AAE3muL3WHCyB-FJGOR1wC7yNiEKBXyEliY",
+  "chat_id": "1396078946",
+  "is_active": true,
+  "interval_minutes": 60,
+  "companies": [
+    {"id": 3, "name": "Larsen & Toubro"},
+    {"id": 4, "name": "Rays Power"},
+    {"id": 5, "name": "Sterlin and Wilson"},
+    {"id": 6, "name": "KPI GREEN ENERGY LIMITED"}
+  ],
+  "last_sent": {}
+}

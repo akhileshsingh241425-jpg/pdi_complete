@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import axios from 'axios';
@@ -15,6 +15,9 @@ const BulkRFIDGenerator = () => {
   const [downloadType, setDownloadType] = useState('merged');
   const [downloadFormat, setDownloadFormat] = useState('pdf');
   const [moduleType, setModuleType] = useState('monofacial');
+  const [turboMode, setTurboMode] = useState(true);
+  const [etaText, setEtaText] = useState('');
+  const abortRef = useRef(false);
 
   // Default values for fields not in Excel
   const [defaults, setDefaults] = useState({
@@ -192,6 +195,383 @@ const BulkRFIDGenerator = () => {
       console.error('RFID Upload error:', error);
       throw error;
     }
+  };
+
+  // ==================== TURBO MODE: jsPDF direct draw (50-100x faster) ====================
+  const loadImageAsBase64 = (url) => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        resolve({ data: canvas.toDataURL('image/png'), width: img.naturalWidth, height: img.naturalHeight });
+      };
+      img.onerror = () => resolve(null);
+      img.src = url;
+    });
+  };
+
+  const drawRFIDPage = (doc, testData, graphImgData, logoImgData, isFirstPage) => {
+    if (!isFirstPage) doc.addPage();
+
+    const pageW = 210;
+    const marginL = 12;
+    const marginR = 12;
+    const contentW = pageW - marginL - marginR;
+    let y = 10;
+
+    // --- Logo centered ---
+    if (logoImgData) {
+      const logoW = 55;
+      const logoH = (logoImgData.height / logoImgData.width) * logoW;
+      const logoX = (pageW - logoW) / 2;
+      doc.addImage(logoImgData.data, 'PNG', logoX, y, logoW, logoH);
+      y += logoH + 2;
+    } else {
+      y += 15;
+    }
+
+    // --- Company name & address (blue, centered) ---
+    doc.setFont('times', 'bold');
+    doc.setFontSize(12);
+    doc.setTextColor(0, 0, 255); // #0000FF
+    doc.text('Gautam Solar Private Limited', pageW / 2, y, { align: 'center' });
+    y += 4.5;
+    doc.setFontSize(9);
+    const addrLines = ['7 Km Milestone, Tosham Road', 'Dist. Bhiwani', 'Bawani Khera', 'HR 127032'];
+    addrLines.forEach(line => {
+      doc.text(line, pageW / 2, y, { align: 'center' });
+      y += 3.5;
+    });
+    y += 2;
+
+    // --- Serial Number & TID (grey) ---
+    doc.setTextColor(62, 62, 62); // #3E3E3E
+    doc.setFontSize(9.5);
+    doc.setFont('times', 'bold');
+    doc.text('Module Serial Number:', marginL, y);
+    doc.setFont('times', 'normal');
+    doc.text(testData.serialNumber || '', marginL + 42, y);
+    y += 4;
+    doc.setFont('times', 'bold');
+    doc.text('TID:', marginL, y);
+    doc.setFont('times', 'normal');
+    doc.text(testData.tid || '', marginL + 8, y);
+    y += 5;
+
+    // --- Detailed Specification heading (blue, underlined) ---
+    doc.setTextColor(0, 0, 255);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(9.5);
+    doc.textWithLink('Detailed Specification:', marginL, y, { url: '' });
+    const headingW = doc.getTextWidth('Detailed Specification:');
+    doc.line(marginL, y + 0.5, marginL + headingW, y + 0.5);
+    y += 2;
+
+    // --- Red line ---
+    doc.setDrawColor(204, 0, 0);
+    doc.setLineWidth(0.6);
+    doc.line(marginL, y, pageW - marginR, y);
+    y += 3;
+
+    // --- Spec Table ---
+    const colSno = marginL;
+    const colSpec = marginL + contentW * 0.07;
+    const colVal = marginL + contentW * 0.65;
+    const tableRight = pageW - marginR;
+    const rowH = 5.2;
+
+    // Table headers (golden #FFC600)
+    doc.setFillColor(255, 255, 255);
+    doc.setDrawColor(0, 0, 0);
+    doc.setLineWidth(0.15);
+
+    // Header row
+    doc.setFont('times', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(255, 198, 0); // #FFC600
+
+    doc.rect(colSno, y, colSpec - colSno, rowH);
+    doc.rect(colSpec, y, colVal - colSpec, rowH);
+    doc.rect(colVal, y, tableRight - colVal, rowH);
+    doc.text('S/no.', colSno + (colSpec - colSno) / 2, y + 3.5, { align: 'center' });
+    doc.text('Specifications', colSpec + 2, y + 3.5);
+    doc.text('Values', colVal + 2, y + 3.5);
+
+    // Underline headers
+    const snoW = doc.getTextWidth('S/no.');
+    doc.line(colSno + (colSpec - colSno - snoW) / 2, y + 4, colSno + (colSpec - colSno + snoW) / 2, y + 4);
+    const specHdrW = doc.getTextWidth('Specifications');
+    doc.line(colSpec + 2, y + 4, colSpec + 2 + specHdrW, y + 4);
+    const valHdrW = doc.getTextWidth('Values');
+    doc.line(colVal + 2, y + 4, colVal + 2 + valHdrW, y + 4);
+
+    y += rowH;
+
+    // Data rows
+    const specRows = [
+      [1, 'Name of the Manufacturer of PV Module', testData.pvManufacturer || 'Gautam Solar Private Limited'],
+      [2, 'Name of the Manufacturer of Solar Cell', testData.cellManufacturer || 'SOLAR SPACE'],
+      [3, 'Module Type', testData.moduleType || 'G2G'],
+      [4, 'Month & Year of the Manufacture of Module', testData.moduleManufactureDate || ''],
+      [5, 'Month & Year of the Manufacture of Solar Cell', testData.cellManufactureDate || ''],
+      [6, 'Country of Origin for PV Module', testData.pvCountry || 'India'],
+      [7, 'Country of Origin for Solar Cell', testData.cellCountry || 'Laos'],
+      [8, 'Power: P-Max of the Module', testData.pmax != null ? parseFloat(testData.pmax).toFixed(6) : ''],
+      [9, 'Voltage: V-Max of the Module', testData.vmax != null ? parseFloat(testData.vmax).toFixed(6) : ''],
+      [10, 'Current: I-Max of the Module', testData.imax != null ? parseFloat(testData.imax).toFixed(6) : ''],
+      [11, 'Fill Factor (FF) of the Module', testData.fillFactor != null ? parseFloat(testData.fillFactor).toFixed(6) : ''],
+      [12, 'VOC', testData.voc != null ? parseFloat(testData.voc).toFixed(6) : ''],
+      [13, 'ISC', testData.isc != null ? parseFloat(testData.isc).toFixed(6) : ''],
+      [14, 'Name of The Test Lab Issuing IEC Certificate', testData.testLab || 'DTH'],
+      [15, 'Date of Obtaining IEC Certificate', testData.iecDate || ''],
+    ];
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9);
+
+    specRows.forEach(([sno, spec, val]) => {
+      doc.rect(colSno, y, colSpec - colSno, rowH);
+      doc.rect(colSpec, y, colVal - colSpec, rowH);
+      doc.rect(colVal, y, tableRight - colVal, rowH);
+      doc.text(String(sno), colSno + (colSpec - colSno) / 2, y + 3.5, { align: 'center' });
+      // Truncate spec text if too wide
+      const maxSpecW = colVal - colSpec - 4;
+      let specText = spec;
+      while (doc.getTextWidth(specText) > maxSpecW && specText.length > 5) {
+        specText = specText.slice(0, -1);
+      }
+      doc.text(specText, colSpec + 2, y + 3.5);
+      // Truncate value if needed
+      const maxValW = tableRight - colVal - 4;
+      let valText = String(val);
+      while (doc.getTextWidth(valText) > maxValW && valText.length > 3) {
+        valText = valText.slice(0, -1);
+      }
+      doc.text(valText, colVal + 2, y + 3.5);
+      y += rowH;
+    });
+
+    y += 3;
+
+    // --- IV Characteristics heading ---
+    doc.setTextColor(0, 0, 255);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(9.5);
+    doc.text('IV Characterstics of the Module:', marginL, y);
+    const ivHeadingW = doc.getTextWidth('IV Characterstics of the Module:');
+    doc.line(marginL, y + 0.5, marginL + ivHeadingW, y + 0.5);
+    y += 4;
+
+    // --- Graph image ---
+    if (graphImgData) {
+      const maxGraphW = contentW;
+      const maxGraphH = 75;
+      let gW = maxGraphW;
+      let gH = (graphImgData.height / graphImgData.width) * gW;
+      if (gH > maxGraphH) {
+        gH = maxGraphH;
+        gW = (graphImgData.width / graphImgData.height) * gH;
+      }
+      const gX = marginL + (contentW - gW) / 2;
+      doc.addImage(graphImgData.data, 'PNG', gX, y, gW, gH);
+    }
+  };
+
+  const generateTurboReports = async (downloadMode = 'merged', modType = 'monofacial') => {
+    if (excelData.length === 0) {
+      alert('Please upload Excel file first!');
+      return;
+    }
+
+    const storedGraphs = await getStoredRFIDGraphs();
+    if (Object.keys(storedGraphs).length === 0) {
+      alert('No RFID graphs found! Please upload graphs in Graph Manager (RFID tab) first.');
+      return;
+    }
+
+    const graphKeys = Object.keys(storedGraphs);
+    const availableWattages = [...new Set(graphKeys.map(key => key.split('_')[0]))].sort((a, b) => parseInt(a) - parseInt(b));
+    const wattagePrompt = `Available wattages with graphs:\n${availableWattages.join('W, ')}W\n\nEnter the wattage (WP) for these modules:`;
+    const selectedWattage = prompt(wattagePrompt, availableWattages[0]);
+    if (!selectedWattage) return;
+
+    const graphKeyCheck = `${selectedWattage}_${modType}`;
+    const hasGraphs = storedGraphs[graphKeyCheck] || storedGraphs[selectedWattage];
+    if (!hasGraphs) {
+      alert(`No graphs found for ${selectedWattage}W (${modType})!`);
+      return;
+    }
+
+    const getRandomGraph = (power, mType) => {
+      const key1 = `${power}_${mType}`;
+      let powerGraphs = storedGraphs[key1] || storedGraphs[power];
+      if (!powerGraphs) {
+        const mk = Object.keys(storedGraphs).find(k => k.startsWith(power));
+        if (mk) powerGraphs = storedGraphs[mk];
+      }
+      if (!powerGraphs) return null;
+      if (typeof powerGraphs === 'string') return powerGraphs;
+      if (Array.isArray(powerGraphs) && powerGraphs.length > 0) {
+        return powerGraphs[Math.floor(Math.random() * powerGraphs.length)];
+      }
+      return null;
+    };
+
+    setIsGenerating(true);
+    setProgress(0);
+    setEtaText('Loading images...');
+    abortRef.current = false;
+
+    try {
+      // Pre-load logo
+      const logoImgData = await loadImageAsBase64('/gautam-solar-logo.png');
+
+      // Pre-load all unique graph images
+      const graphCache = {};
+      const allGraphUrls = new Set();
+      for (let i = 0; i < excelData.length; i++) {
+        const url = getRandomGraph(selectedWattage, modType);
+        if (url && !allGraphUrls.has(url)) allGraphUrls.add(url);
+      }
+      setEtaText(`Loading ${allGraphUrls.size} graph images...`);
+      const urlArr = [...allGraphUrls];
+      for (let i = 0; i < urlArr.length; i++) {
+        graphCache[urlArr[i]] = await loadImageAsBase64(urlArr[i]);
+      }
+
+      // Import jsPDF
+      const { jsPDF } = await import('jspdf');
+      const startTime = Date.now();
+
+      if (downloadMode === 'split') {
+        // Split mode: generate individual PDFs
+        for (let i = 0; i < excelData.length; i++) {
+          if (abortRef.current) break;
+          const row = excelData[i];
+          const testData = buildTestData(row);
+          const graphUrl = getRandomGraph(selectedWattage, modType);
+          const graphImg = graphUrl ? graphCache[graphUrl] : null;
+
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+          drawRFIDPage(doc, testData, graphImg, logoImgData, true);
+          doc.save(`RFID_${(testData.serialNumber || i).toString().replace(/\//g, '_')}.pdf`);
+
+          const pct = ((i + 1) / excelData.length) * 100;
+          setProgress(pct);
+          const elapsed = (Date.now() - startTime) / 1000;
+          const rate = (i + 1) / elapsed;
+          const remaining = Math.round((excelData.length - i - 1) / rate);
+          setEtaText(`${i + 1}/${excelData.length} | ${rate.toFixed(0)}/sec | ~${formatTime(remaining)} left`);
+
+          if (i % 100 === 0) await new Promise(r => setTimeout(r, 10));
+        }
+      } else {
+        // Merged mode: single massive PDF
+        const CHUNK_SIZE = 5000;
+        const totalChunks = Math.ceil(excelData.length / CHUNK_SIZE);
+        const pdfBlobs = [];
+
+        for (let chunk = 0; chunk < totalChunks; chunk++) {
+          if (abortRef.current) break;
+          const chunkStart = chunk * CHUNK_SIZE;
+          const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, excelData.length);
+
+          const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+
+          for (let i = chunkStart; i < chunkEnd; i++) {
+            if (abortRef.current) break;
+            const row = excelData[i];
+            const testData = buildTestData(row);
+            const graphUrl = getRandomGraph(selectedWattage, modType);
+            const graphImg = graphUrl ? graphCache[graphUrl] : null;
+
+            drawRFIDPage(doc, testData, graphImg, logoImgData, i === chunkStart);
+
+            const pct = ((i + 1) / excelData.length) * 100;
+            setProgress(pct);
+            const elapsed = (Date.now() - startTime) / 1000;
+            const rate = (i + 1) / elapsed;
+            const remaining = Math.round((excelData.length - i - 1) / rate);
+            setEtaText(`${i + 1}/${excelData.length} | ${rate.toFixed(0)}/sec | ~${formatTime(remaining)} left`);
+
+            // Yield to UI every 200 pages
+            if (i % 200 === 0) await new Promise(r => setTimeout(r, 5));
+          }
+
+          if (totalChunks === 1) {
+            // Single chunk, download directly
+            doc.save(`RFID_Reports_Merged_${new Date().toISOString().split('T')[0]}_${excelData.length}files.pdf`);
+          } else {
+            pdfBlobs.push(doc.output('blob'));
+          }
+        }
+
+        // If multiple chunks, merge them
+        if (pdfBlobs.length > 1) {
+          setEtaText('Merging PDF chunks...');
+          const { PDFDocument } = await import('pdf-lib');
+          const mergedPdf = await PDFDocument.create();
+          for (const blob of pdfBlobs) {
+            const ab = await blob.arrayBuffer();
+            const donor = await PDFDocument.load(ab);
+            const pages = await mergedPdf.copyPages(donor, donor.getPageIndices());
+            pages.forEach(p => mergedPdf.addPage(p));
+          }
+          const mergedBytes = await mergedPdf.save();
+          const mergedBlob = new Blob([mergedBytes], { type: 'application/pdf' });
+          const url = URL.createObjectURL(mergedBlob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `RFID_Reports_Merged_${new Date().toISOString().split('T')[0]}_${excelData.length}files.pdf`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(url), 2000);
+        }
+      }
+
+      const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+      setIsGenerating(false);
+      setProgress(100);
+      setEtaText('');
+      alert(`✅ ${excelData.length} RFID reports generated in ${totalTime} seconds!\n⚡ Turbo Mode`);
+    } catch (error) {
+      console.error('Turbo generation error:', error);
+      setIsGenerating(false);
+      setEtaText('');
+      alert('Error: ' + error.message);
+    }
+  };
+
+  const buildTestData = (row) => ({
+    serialNumber: row.SerialNumber || '',
+    tid: row.TID || '',
+    pvManufacturer: row.PVManufacturer || defaults.pvManufacturer,
+    cellManufacturer: row.CellManufacturer || defaults.cellManufacturer,
+    moduleType: row.ModuleType || defaults.moduleTypeDefault,
+    moduleManufactureDate: row.ModuleManufactureDate || defaults.moduleManufactureDate,
+    cellManufactureDate: row.CellManufactureDate || defaults.cellManufactureDate,
+    pvCountry: row.PVCountry || defaults.pvCountry,
+    cellCountry: row.CellCountry || defaults.cellCountry,
+    pmax: row.Pmax || 0,
+    vmax: row.Vmax || 0,
+    imax: row.Imax || 0,
+    fillFactor: row.FF || 0,
+    voc: row.Voc || 0,
+    isc: row.Isc || 0,
+    testLab: row.TestLab || defaults.testLab,
+    iecDate: row.IECDate || defaults.iecDate,
+  });
+
+  const formatTime = (seconds) => {
+    if (seconds < 60) return `${seconds}s`;
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}m ${s}s`;
   };
 
   // Generate all reports
@@ -686,6 +1066,23 @@ const BulkRFIDGenerator = () => {
       <div className="generate-section" style={{ padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '20px' }}>
 
+          {/* Turbo Mode Toggle */}
+          <div style={{ background: 'white', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+            <label style={{ fontSize: '13px', fontWeight: '700', color: '#1e3a8a', display: 'block', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Speed Mode</label>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px 8px', border: turboMode ? '2px solid #f59e0b' : '2px solid #e2e8f0', borderRadius: '8px', backgroundColor: turboMode ? '#fefce8' : '#fff' }}>
+                <input type="radio" name="rfidSpeed" value="turbo" checked={turboMode} onChange={() => setTurboMode(true)} style={{ display: 'none' }} />
+                <span style={{ fontSize: '13px', fontWeight: '600' }}>⚡ Turbo</span>
+                <span style={{ fontSize: '10px', color: '#64748b' }}>48K in ~20min</span>
+              </label>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px 8px', border: !turboMode ? '2px solid #8b5cf6' : '2px solid #e2e8f0', borderRadius: '8px', backgroundColor: !turboMode ? '#f5f3ff' : '#fff' }}>
+                <input type="radio" name="rfidSpeed" value="normal" checked={!turboMode} onChange={() => setTurboMode(false)} style={{ display: 'none' }} />
+                <span style={{ fontSize: '13px', fontWeight: '600' }}>🐢 Normal</span>
+                <span style={{ fontSize: '10px', color: '#64748b' }}>HTML render</span>
+              </label>
+            </div>
+          </div>
+
           {/* Module Type */}
           <div style={{ background: 'white', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: '#1e3a8a', display: 'block', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Graph Type</label>
@@ -735,13 +1132,45 @@ const BulkRFIDGenerator = () => {
         </div>
 
         <button
-          onClick={() => generateAllReports(downloadType, downloadFormat, moduleType)}
+          onClick={() => {
+            if (turboMode) {
+              generateTurboReports(downloadType, moduleType);
+            } else {
+              generateAllReports(downloadType, downloadFormat, moduleType);
+            }
+          }}
           disabled={isGenerating || excelData.length === 0}
           className="generate-btn"
-          style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'block' }}
+          style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'block', fontSize: turboMode ? '16px' : '14px', background: turboMode ? 'linear-gradient(135deg, #f59e0b, #ef4444)' : undefined }}
         >
-          {isGenerating ? `Generating... ${Math.round(progress)}%` : `📡 Generate ${downloadType === 'merged' ? 'Merged' : 'Split'} RFID ${downloadFormat.toUpperCase()}`}
+          {isGenerating
+            ? `⚡ Generating... ${Math.round(progress)}%`
+            : turboMode
+              ? `⚡ TURBO Generate ${excelData.length > 0 ? excelData.length + ' ' : ''}${downloadType === 'merged' ? 'Merged' : 'Split'} PDF`
+              : `📡 Generate ${downloadType === 'merged' ? 'Merged' : 'Split'} RFID ${downloadFormat.toUpperCase()}`
+          }
         </button>
+
+        {isGenerating && turboMode && (
+          <button
+            onClick={() => { abortRef.current = true; }}
+            style={{ display: 'block', margin: '10px auto', padding: '8px 20px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}
+          >
+            ✕ Cancel Generation
+          </button>
+        )}
+
+        {etaText && (
+          <div style={{ textAlign: 'center', marginTop: '10px', fontSize: '14px', fontWeight: '600', color: '#1e3a8a', fontFamily: 'monospace' }}>
+            {etaText}
+          </div>
+        )}
+
+        {turboMode && excelData.length > 0 && !isGenerating && (
+          <div style={{ textAlign: 'center', marginTop: '8px', fontSize: '12px', color: '#64748b' }}>
+            ⚡ Turbo Mode: ~{Math.round(excelData.length / 40)} seconds estimated for {excelData.length.toLocaleString()} modules (PDF only, no Word in turbo)
+          </div>
+        )}
       </div>
 
       {isGenerating && (

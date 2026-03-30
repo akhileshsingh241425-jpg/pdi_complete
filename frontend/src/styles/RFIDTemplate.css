@@ -12,19 +12,14 @@
   position: relative;
 }
 
-/* ===== HEADER TABLE (Logo left, Company info right) ===== */
-.rfid-header-table {
-  width: 100%;
-  border: none;
-  border-collapse: collapse;
+/* ===== HEADER: Logo right, Company info centered below ===== */
+.rfid-header {
   margin-bottom: 4mm;
 }
 
-.rfid-header-logo-cell {
-  width: 42%;
-  vertical-align: middle;
-  padding: 0;
-  border: none;
+.rfid-logo-row {
+  text-align: right;
+  margin-bottom: 1mm;
 }
 
 .rfid-logo {
@@ -32,25 +27,21 @@
   height: auto;
 }
 
-.rfid-header-info-cell {
-  width: 58%;
-  vertical-align: middle;
-  text-align: left;
-  padding: 0 0 0 3mm;
-  border: none;
+.rfid-company-block {
+  text-align: center;
 }
 
 .rfid-company-name {
-  font-size: 14pt;
+  font-size: 12pt;
   font-weight: 700;
-  color: #000;
+  color: #cc0000;
   margin-bottom: 1px;
 }
 
 .rfid-company-addr {
   font-size: 9pt;
   font-weight: 700;
-  color: #000;
+  color: #cc0000;
   line-height: 1.45;
   font-style: italic;
 }
@@ -103,7 +94,7 @@
   font-weight: 700;
   font-size: 9pt;
   text-align: left;
-  color: #000;
+  color: #cc0000;
 }
 
 .rfid-col-sno { width: 7%; text-align: center; }

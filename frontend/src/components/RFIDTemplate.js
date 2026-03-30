@@ -22,23 +22,19 @@ const RFIDTemplate = ({ testData, graphImage }) => {
 
   return (
     <div className="rfid-page">
-      {/* Logo + Company Header */}
-      <table className="rfid-header-table">
-        <tbody>
-          <tr>
-            <td className="rfid-header-logo-cell">
-              <img src="/gautam-solar-logo.png" alt="Gautam Solar" className="rfid-logo" />
-            </td>
-            <td className="rfid-header-info-cell">
-              <div className="rfid-company-name">Gautam Solar Private Limited</div>
-              <div className="rfid-company-addr">7 km Milestone, Tosham Road</div>
-              <div className="rfid-company-addr">Dist. Bhiwani</div>
-              <div className="rfid-company-addr">Bawani Khera HR 127032</div>
-              <div className="rfid-company-addr">India</div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+      {/* Logo right-aligned, Company info centered below */}
+      <div className="rfid-header">
+        <div className="rfid-logo-row">
+          <img src="/gautam-solar-logo.png" alt="Gautam Solar" className="rfid-logo" />
+        </div>
+        <div className="rfid-company-block">
+          <div className="rfid-company-name">Gautam Solar Private Limited</div>
+          <div className="rfid-company-addr">7 km Milestone, Tosham Road</div>
+          <div className="rfid-company-addr">Dist. Bhiwani</div>
+          <div className="rfid-company-addr">Bawani Khera HR 127032</div>
+          <div className="rfid-company-addr">India</div>
+        </div>
+      </div>
 
       {/* Serial Number & TID */}
       <div className="rfid-serial-block">

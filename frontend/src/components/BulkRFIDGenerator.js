@@ -2,6 +2,8 @@ import React, { useState, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import axios from 'axios';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import RFIDTemplate from './RFIDTemplate';
 import { getStoredRFIDGraphs } from './GraphManager';
 import '../styles/BulkRFID.css';
@@ -12,7 +14,7 @@ const BulkRFIDGenerator = () => {
   const [progress, setProgress] = useState(0);
   const [editingIndex, setEditingIndex] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const [downloadType, setDownloadType] = useState('merged');
+  const [downloadType, setDownloadType] = useState('zip');
   const [downloadFormat, setDownloadFormat] = useState('pdf');
   const [moduleType, setModuleType] = useState('monofacial');
   const [turboMode, setTurboMode] = useState(true);
@@ -449,8 +451,11 @@ const BulkRFIDGenerator = () => {
       const { jsPDF } = await import('jspdf');
       const startTime = Date.now();
 
-      if (downloadMode === 'split') {
-        // Split mode: generate individual PDFs
+      if (downloadMode === 'split' || downloadMode === 'zip') {
+        // ZIP mode: generate individual PDFs and pack into ZIP
+        const zip = new JSZip();
+        const dateStr = new Date().toISOString().split('T')[0];
+
         for (let i = 0; i < excelData.length; i++) {
           if (abortRef.current) break;
           const row = excelData[i];
@@ -460,16 +465,28 @@ const BulkRFIDGenerator = () => {
 
           const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
           drawRFIDPage(doc, testData, graphImg, logoImgData, true);
-          doc.save(`RFID_${(testData.serialNumber || i).toString().replace(/\//g, '_')}.pdf`);
+
+          const fileName = `RFID_${(testData.serialNumber || i).toString().replace(/\//g, '_')}.pdf`;
+          const pdfBlob = doc.output('arraybuffer');
+          zip.file(fileName, pdfBlob);
 
           const pct = ((i + 1) / excelData.length) * 100;
-          setProgress(pct);
+          setProgress(pct * 0.85); // 85% for generation, 15% for zip
           const elapsed = (Date.now() - startTime) / 1000;
           const rate = (i + 1) / elapsed;
-          const remaining = Math.round((excelData.length - i - 1) / rate);
+          const remaining = Math.round((excelData.length - i - 1) / rate) + 10;
           setEtaText(`${i + 1}/${excelData.length} | ${rate.toFixed(0)}/sec | ~${formatTime(remaining)} left`);
 
-          if (i % 100 === 0) await new Promise(r => setTimeout(r, 10));
+          if (i % 200 === 0) await new Promise(r => setTimeout(r, 5));
+        }
+
+        if (!abortRef.current) {
+          setEtaText(`Creating ZIP file (${excelData.length} PDFs)... Please wait`);
+          setProgress(88);
+          const zipBlob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 1 } }, (metadata) => {
+            setProgress(88 + metadata.percent * 0.12);
+          });
+          saveAs(zipBlob, `RFID_Reports_${dateStr}_${excelData.length}files.zip`);
         }
       } else {
         // Merged mode: single massive PDF
@@ -1117,15 +1134,20 @@ const BulkRFIDGenerator = () => {
           <div style={{ background: 'white', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
             <label style={{ fontSize: '13px', fontWeight: '700', color: '#1e3a8a', display: 'block', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Output Type</label>
             <div style={{ display: 'flex', gap: '10px' }}>
+              <label style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px 8px', border: downloadType === 'zip' ? '2px solid #f59e0b' : '2px solid #e2e8f0', borderRadius: '8px', backgroundColor: downloadType === 'zip' ? '#fefce8' : '#fff' }}>
+                <input type="radio" name="rfidDownloadType" value="zip" checked={downloadType === 'zip'} onChange={(e) => setDownloadType(e.target.value)} style={{ display: 'none' }} />
+                <span style={{ fontSize: '13px', fontWeight: '600' }}>📦 ZIP</span>
+                <span style={{ fontSize: '10px', color: '#64748b' }}>All PDFs in ZIP</span>
+              </label>
               <label style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px 8px', border: downloadType === 'merged' ? '2px solid #3b82f6' : '2px solid #e2e8f0', borderRadius: '8px', backgroundColor: downloadType === 'merged' ? '#eff6ff' : '#fff' }}>
                 <input type="radio" name="rfidDownloadType" value="merged" checked={downloadType === 'merged'} onChange={(e) => setDownloadType(e.target.value)} style={{ display: 'none' }} />
                 <span style={{ fontSize: '13px', fontWeight: '600' }}>📄 Merged</span>
-                <span style={{ fontSize: '10px', color: '#64748b' }}>Single file</span>
+                <span style={{ fontSize: '10px', color: '#64748b' }}>Single PDF</span>
               </label>
               <label style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', padding: '10px 8px', border: downloadType === 'split' ? '2px solid #3b82f6' : '2px solid #e2e8f0', borderRadius: '8px', backgroundColor: downloadType === 'split' ? '#eff6ff' : '#fff' }}>
                 <input type="radio" name="rfidDownloadType" value="split" checked={downloadType === 'split'} onChange={(e) => setDownloadType(e.target.value)} style={{ display: 'none' }} />
                 <span style={{ fontSize: '13px', fontWeight: '600' }}>📑 Split</span>
-                <span style={{ fontSize: '10px', color: '#64748b' }}>Individual</span>
+                <span style={{ fontSize: '10px', color: '#64748b' }}>Individual DL</span>
               </label>
             </div>
           </div>
@@ -1146,8 +1168,8 @@ const BulkRFIDGenerator = () => {
           {isGenerating
             ? `⚡ Generating... ${Math.round(progress)}%`
             : turboMode
-              ? `⚡ TURBO Generate ${excelData.length > 0 ? excelData.length + ' ' : ''}${downloadType === 'merged' ? 'Merged' : 'Split'} PDF`
-              : `📡 Generate ${downloadType === 'merged' ? 'Merged' : 'Split'} RFID ${downloadFormat.toUpperCase()}`
+              ? `⚡ TURBO Generate ${excelData.length > 0 ? excelData.length + ' ' : ''}${downloadType === 'zip' ? 'ZIP' : downloadType === 'merged' ? 'Merged' : 'Split'} PDF`
+              : `📡 Generate ${downloadType === 'zip' ? 'ZIP' : downloadType === 'merged' ? 'Merged' : 'Split'} RFID ${downloadFormat.toUpperCase()}`
           }
         </button>
 

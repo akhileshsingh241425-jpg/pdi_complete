@@ -161,10 +161,26 @@ const BulkRFIDGenerator = () => {
             }
           };
 
-          html2pdf().set(opt).from(tempDiv.firstChild).outputPdf('blob').then((blob) => {
+          html2pdf().set(opt).from(tempDiv.firstChild).outputPdf('blob').then(async (blob) => {
             root.unmount();
             document.body.removeChild(container);
-            resolve(blob);
+            // Keep only page 1 - remove extra pages
+            try {
+              const { PDFDocument } = await import('pdf-lib');
+              const ab = await blob.arrayBuffer();
+              const srcDoc = await PDFDocument.load(ab);
+              if (srcDoc.getPageCount() > 1) {
+                const newDoc = await PDFDocument.create();
+                const [page1] = await newDoc.copyPages(srcDoc, [0]);
+                newDoc.addPage(page1);
+                const trimmedBytes = await newDoc.save();
+                resolve(new Blob([trimmedBytes], { type: 'application/pdf' }));
+              } else {
+                resolve(blob);
+              }
+            } catch (e) {
+              resolve(blob); // fallback: return as-is
+            }
           }).catch(reject);
         }, 100);
       }).catch(reject);
@@ -224,68 +240,68 @@ const BulkRFIDGenerator = () => {
     const marginL = 12;
     const marginR = 12;
     const contentW = pageW - marginL - marginR;
-    let y = 10;
+    let y = 8;
 
     // --- Logo centered ---
     if (logoImgData) {
-      const logoW = 55;
+      const logoW = 45;
       const logoH = (logoImgData.height / logoImgData.width) * logoW;
       const logoX = (pageW - logoW) / 2;
-      doc.addImage(logoImgData.data, 'PNG', logoX, y, logoW, logoH);
-      y += logoH + 2;
+      doc.addImage(logoImgData.data, 'PNG', logoX, y, logoW, Math.min(logoH, 18));
+      y += Math.min(logoH, 18) + 1;
     } else {
-      y += 15;
+      y += 12;
     }
 
     // --- Company name & address (blue, centered) ---
     doc.setFont('times', 'bold');
-    doc.setFontSize(12);
+    doc.setFontSize(11);
     doc.setTextColor(0, 0, 255); // #0000FF
     doc.text('Gautam Solar Private Limited', pageW / 2, y, { align: 'center' });
-    y += 4.5;
-    doc.setFontSize(9);
+    y += 4;
+    doc.setFontSize(8.5);
     const addrLines = ['7 Km Milestone, Tosham Road', 'Dist. Bhiwani', 'Bawani Khera', 'HR 127032'];
     addrLines.forEach(line => {
       doc.text(line, pageW / 2, y, { align: 'center' });
-      y += 3.5;
+      y += 3;
     });
-    y += 2;
+    y += 1.5;
 
     // --- Serial Number & TID (grey) ---
     doc.setTextColor(62, 62, 62); // #3E3E3E
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.setFont('times', 'bold');
     doc.text('Module Serial Number:', marginL, y);
     doc.setFont('times', 'normal');
-    doc.text(testData.serialNumber || '', marginL + 42, y);
-    y += 4;
+    doc.text(testData.serialNumber || '', marginL + 40, y);
+    y += 3.5;
     doc.setFont('times', 'bold');
     doc.text('TID:', marginL, y);
     doc.setFont('times', 'normal');
     doc.text(testData.tid || '', marginL + 8, y);
-    y += 5;
+    y += 4;
 
     // --- Detailed Specification heading (blue, underlined) ---
     doc.setTextColor(0, 0, 255);
     doc.setFont('times', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.textWithLink('Detailed Specification:', marginL, y, { url: '' });
     const headingW = doc.getTextWidth('Detailed Specification:');
     doc.line(marginL, y + 0.5, marginL + headingW, y + 0.5);
-    y += 2;
+    y += 1.5;
 
     // --- Red line ---
     doc.setDrawColor(204, 0, 0);
-    doc.setLineWidth(0.6);
+    doc.setLineWidth(0.5);
     doc.line(marginL, y, pageW - marginR, y);
-    y += 3;
+    y += 2;
 
     // --- Spec Table ---
     const colSno = marginL;
     const colSpec = marginL + contentW * 0.07;
     const colVal = marginL + contentW * 0.65;
     const tableRight = pageW - marginR;
-    const rowH = 5.2;
+    const rowH = 4.5;
 
     // Table headers (golden #FFC600)
     doc.setFillColor(255, 255, 255);
@@ -300,17 +316,17 @@ const BulkRFIDGenerator = () => {
     doc.rect(colSno, y, colSpec - colSno, rowH);
     doc.rect(colSpec, y, colVal - colSpec, rowH);
     doc.rect(colVal, y, tableRight - colVal, rowH);
-    doc.text('S/no.', colSno + (colSpec - colSno) / 2, y + 3.5, { align: 'center' });
-    doc.text('Specifications', colSpec + 2, y + 3.5);
-    doc.text('Values', colVal + 2, y + 3.5);
+    doc.text('S/no.', colSno + (colSpec - colSno) / 2, y + 3, { align: 'center' });
+    doc.text('Specifications', colSpec + 2, y + 3);
+    doc.text('Values', colVal + 2, y + 3);
 
     // Underline headers
     const snoW = doc.getTextWidth('S/no.');
-    doc.line(colSno + (colSpec - colSno - snoW) / 2, y + 4, colSno + (colSpec - colSno + snoW) / 2, y + 4);
+    doc.line(colSno + (colSpec - colSno - snoW) / 2, y + 3.5, colSno + (colSpec - colSno + snoW) / 2, y + 3.5);
     const specHdrW = doc.getTextWidth('Specifications');
-    doc.line(colSpec + 2, y + 4, colSpec + 2 + specHdrW, y + 4);
+    doc.line(colSpec + 2, y + 3.5, colSpec + 2 + specHdrW, y + 3.5);
     const valHdrW = doc.getTextWidth('Values');
-    doc.line(colVal + 2, y + 4, colVal + 2 + valHdrW, y + 4);
+    doc.line(colVal + 2, y + 3.5, colVal + 2 + valHdrW, y + 3.5);
 
     y += rowH;
 
@@ -335,45 +351,46 @@ const BulkRFIDGenerator = () => {
 
     doc.setTextColor(0, 0, 0);
     doc.setFont('times', 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8.5);
 
     specRows.forEach(([sno, spec, val]) => {
       doc.rect(colSno, y, colSpec - colSno, rowH);
       doc.rect(colSpec, y, colVal - colSpec, rowH);
       doc.rect(colVal, y, tableRight - colVal, rowH);
-      doc.text(String(sno), colSno + (colSpec - colSno) / 2, y + 3.5, { align: 'center' });
+      doc.text(String(sno), colSno + (colSpec - colSno) / 2, y + 3, { align: 'center' });
       // Truncate spec text if too wide
       const maxSpecW = colVal - colSpec - 4;
       let specText = spec;
       while (doc.getTextWidth(specText) > maxSpecW && specText.length > 5) {
         specText = specText.slice(0, -1);
       }
-      doc.text(specText, colSpec + 2, y + 3.5);
+      doc.text(specText, colSpec + 2, y + 3);
       // Truncate value if needed
       const maxValW = tableRight - colVal - 4;
       let valText = String(val);
       while (doc.getTextWidth(valText) > maxValW && valText.length > 3) {
         valText = valText.slice(0, -1);
       }
-      doc.text(valText, colVal + 2, y + 3.5);
+      doc.text(valText, colVal + 2, y + 3);
       y += rowH;
     });
 
-    y += 3;
+    y += 2;
 
     // --- IV Characteristics heading ---
     doc.setTextColor(0, 0, 255);
     doc.setFont('times', 'bold');
-    doc.setFontSize(9.5);
+    doc.setFontSize(9);
     doc.text('IV Characterstics of the Module:', marginL, y);
     const ivHeadingW = doc.getTextWidth('IV Characterstics of the Module:');
     doc.line(marginL, y + 0.5, marginL + ivHeadingW, y + 0.5);
-    y += 4;
+    y += 3;
 
     // --- Graph image ---
     if (graphImgData) {
+      const remainingH = 287 - y; // A4 = 297mm, leave 10mm bottom margin
       const maxGraphW = contentW;
-      const maxGraphH = 75;
+      const maxGraphH = Math.min(65, remainingH - 2);
       let gW = maxGraphW;
       let gH = (graphImgData.height / graphImgData.width) * gW;
       if (gH > maxGraphH) {
@@ -465,6 +482,8 @@ const BulkRFIDGenerator = () => {
 
           const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
           drawRFIDPage(doc, testData, graphImg, logoImgData, true);
+          // Keep only page 1
+          while (doc.getNumberOfPages() > 1) { doc.deletePage(2); }
 
           const fileName = `RFID_${(testData.serialNumber || i).toString().replace(/\//g, '_')}.pdf`;
           const pdfBlob = doc.output('arraybuffer');
@@ -511,6 +530,7 @@ const BulkRFIDGenerator = () => {
             drawRFIDPage(doc, testData, graphImg, logoImgData, i === chunkStart);
 
             const pct = ((i + 1) / excelData.length) * 100;
+            // Note: merged mode - no page deletion here, we want 1 page per module sequentially
             setProgress(pct);
             const elapsed = (Date.now() - startTime) / 1000;
             const rate = (i + 1) / elapsed;

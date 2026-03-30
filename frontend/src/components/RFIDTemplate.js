@@ -20,65 +20,70 @@ const RFIDTemplate = ({ testData, graphImage }) => {
     { sno: 15, spec: 'Date of Obtaining IEC Certificate', value: testData.iecDate || '' },
   ];
 
+  // Inline styles to ensure html2pdf/html2canvas renders colors correctly
+  const BLUE = '#0000FF';
+  const GREY = '#3E3E3E';
+  const GOLD = '#FFC600';
+
   return (
-    <div className="rfid-page">
+    <div className="rfid-page" style={{ width: '210mm', minHeight: '297mm', background: '#fff', padding: '10mm 12mm', fontFamily: "'Times New Roman', Times, serif", color: '#000', boxSizing: 'border-box' }}>
       {/* Logo right-aligned, Company info centered below */}
-      <div className="rfid-header">
-        <div className="rfid-logo-row">
-          <img src="/gautam-solar-logo.png" alt="Gautam Solar" className="rfid-logo" />
+      <div className="rfid-header" style={{ marginBottom: '4mm' }}>
+        <div className="rfid-logo-row" style={{ textAlign: 'center', marginBottom: '1mm' }}>
+          <img src="/gautam-solar-logo.png" alt="Gautam Solar" className="rfid-logo" style={{ width: '55mm', height: 'auto' }} />
         </div>
-        <div className="rfid-company-block">
-          <div className="rfid-company-name">Gautam Solar Private Limited</div>
-          <div className="rfid-company-addr">7 Km Milestone, Tosham Road</div>
-          <div className="rfid-company-addr">Dist. Bhiwani</div>
-          <div className="rfid-company-addr">Bawani Khera</div>
-          <div className="rfid-company-addr">HR 127032</div>
+        <div className="rfid-company-block" style={{ textAlign: 'center' }}>
+          <div className="rfid-company-name" style={{ fontSize: '12pt', fontWeight: 700, color: BLUE, marginBottom: '1px' }}>Gautam Solar Private Limited</div>
+          <div className="rfid-company-addr" style={{ fontSize: '9pt', fontWeight: 700, color: BLUE, lineHeight: 1.45 }}>7 Km Milestone, Tosham Road</div>
+          <div className="rfid-company-addr" style={{ fontSize: '9pt', fontWeight: 700, color: BLUE, lineHeight: 1.45 }}>Dist. Bhiwani</div>
+          <div className="rfid-company-addr" style={{ fontSize: '9pt', fontWeight: 700, color: BLUE, lineHeight: 1.45 }}>Bawani Khera</div>
+          <div className="rfid-company-addr" style={{ fontSize: '9pt', fontWeight: 700, color: BLUE, lineHeight: 1.45 }}>HR 127032</div>
         </div>
       </div>
 
       {/* Serial Number & TID */}
-      <div className="rfid-serial-block">
-        <div className="rfid-serial-line">
-          <span className="rfid-serial-label">Module Serial Number:</span>
-          <span className="rfid-serial-val">{testData.serialNumber || ''}</span>
+      <div className="rfid-serial-block" style={{ margin: '2mm 0 3mm 0' }}>
+        <div className="rfid-serial-line" style={{ marginBottom: '0.5mm' }}>
+          <span className="rfid-serial-label" style={{ fontSize: '9.5pt', fontWeight: 700, color: GREY, marginRight: '2mm' }}>Module Serial Number:</span>
+          <span className="rfid-serial-val" style={{ fontSize: '9.5pt', color: GREY }}>{testData.serialNumber || ''}</span>
         </div>
-        <div className="rfid-serial-line">
-          <span className="rfid-serial-label">TID:</span>
-          <span className="rfid-serial-val">{testData.tid || ''}</span>
+        <div className="rfid-serial-line" style={{ marginBottom: '0.5mm' }}>
+          <span className="rfid-serial-label" style={{ fontSize: '9.5pt', fontWeight: 700, color: GREY, marginRight: '2mm' }}>TID:</span>
+          <span className="rfid-serial-val" style={{ fontSize: '9.5pt', color: GREY }}>{testData.tid || ''}</span>
         </div>
       </div>
 
       {/* Detailed Specification underlined heading */}
-      <div className="rfid-spec-heading">Detailed Specification:</div>
-      <hr className="rfid-spec-line" />
+      <div className="rfid-spec-heading" style={{ fontSize: '9.5pt', fontWeight: 700, color: BLUE, textDecoration: 'underline', marginBottom: '1mm' }}>Detailed Specification:</div>
+      <hr className="rfid-spec-line" style={{ height: '2px', background: '#cc0000', border: 'none', marginBottom: '2mm' }} />
 
       {/* Specification Table */}
-      <table className="rfid-spec-table">
+      <table className="rfid-spec-table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: '9pt', marginBottom: '3mm' }}>
         <thead>
           <tr>
-            <th className="rfid-col-sno"><u>S/no.</u></th>
-            <th className="rfid-col-spec"><u>Specifications</u></th>
-            <th className="rfid-col-val"><u>Values</u></th>
+            <th className="rfid-col-sno" style={{ border: '0.5pt solid #000', padding: '2pt 4pt', fontWeight: 700, fontSize: '9pt', textAlign: 'center', color: GOLD, width: '7%' }}><u>S/no.</u></th>
+            <th className="rfid-col-spec" style={{ border: '0.5pt solid #000', padding: '2pt 4pt', fontWeight: 700, fontSize: '9pt', textAlign: 'left', color: GOLD, width: '58%' }}><u>Specifications</u></th>
+            <th className="rfid-col-val" style={{ border: '0.5pt solid #000', padding: '2pt 4pt', fontWeight: 700, fontSize: '9pt', textAlign: 'left', color: GOLD, width: '35%' }}><u>Values</u></th>
           </tr>
         </thead>
         <tbody>
           {specRows.map((row) => (
             <tr key={row.sno}>
-              <td className="rfid-cell-sno">{row.sno}</td>
-              <td className="rfid-cell-spec">{row.spec}</td>
-              <td className="rfid-cell-val">{row.value}</td>
+              <td className="rfid-cell-sno" style={{ border: '0.5pt solid #000', padding: '1.5pt 4pt', fontSize: '9pt', color: '#000', textAlign: 'center' }}>{row.sno}</td>
+              <td className="rfid-cell-spec" style={{ border: '0.5pt solid #000', padding: '1.5pt 4pt', fontSize: '9pt', color: '#000' }}>{row.spec}</td>
+              <td className="rfid-cell-val" style={{ border: '0.5pt solid #000', padding: '1.5pt 4pt', fontSize: '9pt', color: '#000' }}>{row.value}</td>
             </tr>
           ))}
         </tbody>
       </table>
 
       {/* IV Characteristics */}
-      <div className="rfid-iv-heading">IV Characterstics of the Module:</div>
-      <div className="rfid-graph-box">
+      <div className="rfid-iv-heading" style={{ fontSize: '9.5pt', fontWeight: 700, color: BLUE, textDecoration: 'underline', margin: '2mm 0' }}>IV Characterstics of the Module:</div>
+      <div className="rfid-graph-box" style={{ width: '100%', height: '82mm', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {graphImage ? (
-          <img src={graphImage} alt="IV Characteristics" className="rfid-graph-img" />
+          <img src={graphImage} alt="IV Characteristics" className="rfid-graph-img" style={{ maxWidth: '100%', maxHeight: '82mm', objectFit: 'contain' }} />
         ) : (
-          <div className="rfid-graph-empty">IV Curve Graph not available</div>
+          <div className="rfid-graph-empty" style={{ color: '#999', fontSize: '11pt' }}>IV Curve Graph not available</div>
         )}
       </div>
     </div>

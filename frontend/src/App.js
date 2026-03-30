@@ -13,6 +13,7 @@ import CalibrationDashboard from './components/CalibrationDashboard';
 import QMSDashboard from './components/QMSDashboard';
 import DispatchTracker from './components/DispatchTracker';
 import PDIDocGenerator from './components/PDIDocGenerator';
+import BulkRFIDGenerator from './components/BulkRFIDGenerator';
 import Login from './components/Login';
 import './styles/Navbar.css';
 import './App.css';
@@ -292,7 +293,7 @@ function App() {
   const roleAccess = {
     super_admin: ['all'], // Full access
     user: ['all'], // Full access for normal users too
-    ftr_only: ['ftr-management', 'test-report', 'graph-manager', 'ai-assistant', 'ftr-dashboard', 'witness-report', 'dispatch-tracker', 'pdi-docs'],
+    ftr_only: ['ftr-management', 'test-report', 'graph-manager', 'ai-assistant', 'ftr-dashboard', 'witness-report', 'dispatch-tracker', 'pdi-docs', 'rfid-report'],
     ipqc_only: ['ipqc', 'daily-report', 'dispatch-tracker'],
     coc_only: ['coc-dashboard']
   };
@@ -386,6 +387,8 @@ function App() {
         return <QMSDashboard />;
       case 'pdi-docs':
         return <PDIDocGenerator />;
+      case 'rfid-report':
+        return <BulkRFIDGenerator />;
       default:
         return <IPQCForm />;
     }
@@ -581,6 +584,16 @@ function App() {
             >
               <span className="icon material-symbols-outlined">description</span>
               {!sidebarCollapsed && <span className="label">PDI Docs</span>}
+            </li>
+          )}
+          {hasAccess('rfid-report') && (
+            <li 
+              className={activeSection === 'rfid-report' ? 'active' : ''}
+              onClick={() => handleMenuItemClick('rfid-report')}
+              title="RFID Report Generator"
+            >
+              <span className="icon material-symbols-outlined">contactless</span>
+              {!sidebarCollapsed && <span className="label">RFID Report</span>}
             </li>
           )}
           <li 

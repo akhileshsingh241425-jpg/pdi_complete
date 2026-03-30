@@ -70,6 +70,7 @@ def create_app():
     from app.routes.ftr_routes import ftr_bp
     from app.routes.ftr_management_routes import ftr_management_bp
     from app.routes.ftr_upload_routes import ftr_upload_bp
+    from app.routes.rfid_upload_routes import rfid_upload_bp
     from app.routes.ai_assistant_routes import ai_assistant_bp
     from app.routes.coc_management_routes import coc_mgmt_bp
     from app.routes.witness_report_routes import witness_report_bp
@@ -102,6 +103,7 @@ def create_app():
     app.register_blueprint(ftr_bp)
     app.register_blueprint(ftr_management_bp, url_prefix='/api')
     app.register_blueprint(ftr_upload_bp)
+    app.register_blueprint(rfid_upload_bp)
     app.register_blueprint(ai_assistant_bp, url_prefix='/api')
     app.register_blueprint(coc_mgmt_bp)
     app.register_blueprint(witness_report_bp, url_prefix='/api')

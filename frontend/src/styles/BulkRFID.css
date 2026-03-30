@@ -1,0 +1,282 @@
+.bulk-rfid-container {
+  max-width: 1200px;
+  margin: 20px auto;
+  padding: 30px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+.bulk-rfid-container h2 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 30px;
+  font-size: 28px;
+}
+
+/* Defaults Section */
+.rfid-defaults-section {
+  margin-bottom: 25px;
+  padding: 20px;
+  background: #f0f7ff;
+  border-radius: 10px;
+  border: 1px solid #bfdbfe;
+}
+
+.rfid-defaults-section h3 {
+  margin: 0 0 15px 0;
+  color: #1e3a8a;
+  font-size: 16px;
+}
+
+.rfid-defaults-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.rfid-default-field label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #475569;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.rfid-default-field input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+  box-sizing: border-box;
+  transition: border-color 0.2s;
+}
+
+.rfid-default-field input:focus {
+  border-color: #3b82f6;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* Reuse BulkFTR styles for common elements */
+.bulk-rfid-container .upload-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 30px;
+  margin-bottom: 30px;
+}
+
+.bulk-rfid-container .upload-box {
+  border: 2px dashed #ddd;
+  padding: 25px;
+  border-radius: 8px;
+  background: #f9f9f9;
+}
+
+.bulk-rfid-container .upload-box h3 {
+  margin-top: 0;
+  color: #1e3a8a;
+  font-size: 20px;
+  margin-bottom: 10px;
+}
+
+.bulk-rfid-container .file-input {
+  display: block;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.bulk-rfid-container .success-msg {
+  margin-top: 15px;
+  padding: 12px;
+  background: #d4edda;
+  color: #155724;
+  border: 1px solid #c3e6cb;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.bulk-rfid-container .generate-section {
+  text-align: center;
+  margin: 30px 0;
+}
+
+.bulk-rfid-container .generate-btn {
+  background: #1e3a8a;
+  color: white;
+  border: none;
+  padding: 15px 40px;
+  font-size: 18px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.bulk-rfid-container .generate-btn:hover:not(:disabled) {
+  background: #1e40af;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(30, 58, 138, 0.3);
+}
+
+.bulk-rfid-container .generate-btn:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
+.bulk-rfid-container .progress-bar {
+  width: 100%;
+  height: 30px;
+  background: #e0e0e0;
+  border-radius: 15px;
+  overflow: hidden;
+  margin-top: 20px;
+}
+
+.bulk-rfid-container .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1e3a8a, #3b82f6);
+  transition: width 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: bold;
+}
+
+/* Data Table */
+.bulk-rfid-container .data-table-section {
+  margin: 24px 0;
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.bulk-rfid-container .table-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.bulk-rfid-container .table-header h3 {
+  color: #1e3a8a;
+  font-size: 18px;
+  margin: 0;
+}
+
+.bulk-rfid-container .btn-clear {
+  padding: 8px 16px;
+  background: #dc2626;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.bulk-rfid-container .table-container {
+  overflow-x: auto;
+}
+
+.bulk-rfid-container .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.bulk-rfid-container .data-table th {
+  background: #f8fafc;
+  padding: 12px 8px;
+  text-align: left;
+  border-bottom: 2px solid #e5e7eb;
+  color: #374151;
+  font-weight: 600;
+}
+
+.bulk-rfid-container .data-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.bulk-rfid-container .data-table tbody tr:hover {
+  background: #f8fafc;
+}
+
+.bulk-rfid-container .btn-edit,
+.bulk-rfid-container .btn-delete,
+.bulk-rfid-container .btn-save,
+.bulk-rfid-container .btn-cancel {
+  padding: 6px 10px;
+  margin: 0 4px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s;
+}
+
+.bulk-rfid-container .btn-edit {
+  background: #3b82f6;
+  color: white;
+}
+
+.bulk-rfid-container .btn-delete {
+  background: #ef4444;
+  color: white;
+}
+
+.bulk-rfid-container .btn-save {
+  background: #10b981;
+  color: white;
+  font-weight: bold;
+}
+
+.bulk-rfid-container .btn-cancel {
+  background: #6b7280;
+  color: white;
+  font-weight: bold;
+}
+
+@media (max-width: 768px) {
+  .bulk-rfid-container {
+    padding: 15px;
+    margin: 10px;
+  }
+
+  .bulk-rfid-container h2 {
+    font-size: 22px;
+  }
+
+  .bulk-rfid-container .upload-section {
+    grid-template-columns: 1fr;
+    gap: 15px;
+  }
+
+  .rfid-defaults-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bulk-rfid-container .generate-btn {
+    width: 100%;
+    padding: 14px;
+    font-size: 16px;
+  }
+
+  .bulk-rfid-container .data-table {
+    font-size: 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .rfid-defaults-grid {
+    grid-template-columns: 1fr;
+  }
+}

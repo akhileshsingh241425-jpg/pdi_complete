@@ -12,7 +12,10 @@ const GraphManager = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [selectedWattage, setSelectedWattage] = useState('630');
-  const [selectedModuleType, setSelectedModuleType] = useState('monofacial'); // 'monofacial' or 'bifacial'
+  const [selectedModuleType, setSelectedModuleType] = useState('monofacial');
+  const [graphMode, setGraphMode] = useState('ftr'); // 'ftr' or 'rfid'
+
+  const graphApiBase = graphMode === 'rfid' ? '/rfid/graphs' : '/ftr/graphs';
 
   // Common wattages list
   const wattageOptions = ['510', '520', '530', '540', '550', '560', '580', '590', '600', '610', '625', '630', '650', '655'];
@@ -31,12 +34,12 @@ const GraphManager = () => {
   // Load graphs from backend on mount
   useEffect(() => {
     loadGraphsFromServer();
-  }, []);
+  }, [graphMode]);
 
   const loadGraphsFromServer = async () => {
     try {
       setIsLoading(true);
-      const response = await axios.get(getApiEndpoint('/ftr/graphs'));
+      const response = await axios.get(getApiEndpoint(graphApiBase));
       if (response.data.success) {
         setUploadedGraphs(response.data.graphs || {});
       }
@@ -73,7 +76,7 @@ const GraphManager = () => {
         formData.append('files', file);
       });
 
-      const response = await axios.post(getApiEndpoint('/ftr/graphs/upload'), formData, {
+      const response = await axios.post(getApiEndpoint(`${graphApiBase}/upload`), formData, {
         headers: {
           'Content-Type': 'multipart/form-data'
         }
@@ -102,7 +105,7 @@ const GraphManager = () => {
     if (!window.confirm(`Delete all graphs for ${power}W?`)) return;
     
     try {
-      const response = await axios.delete(getApiEndpoint(`/ftr/graphs/${power}`));
+      const response = await axios.delete(getApiEndpoint(`${graphApiBase}/${power}`));
       if (response.data.success) {
         alert(response.data.message);
         await loadGraphsFromServer();
@@ -117,7 +120,7 @@ const GraphManager = () => {
     if (!window.confirm('Are you sure you want to delete ALL graphs?')) return;
     
     try {
-      const response = await axios.delete(getApiEndpoint('/ftr/graphs/clear'));
+      const response = await axios.delete(getApiEndpoint(`${graphApiBase}/clear`));
       if (response.data.success) {
         alert(response.data.message);
         setUploadedGraphs({});
@@ -142,10 +145,32 @@ const GraphManager = () => {
 
   return (
     <div className="graph-manager">
+      {/* Mode Toggle: FTR / RFID */}
+      <div style={{ display: 'flex', gap: '0', marginBottom: '20px', borderBottom: '2px solid #e0e0e0' }}>
+        <button
+          onClick={() => setGraphMode('ftr')}
+          style={{
+            padding: '12px 30px', fontWeight: '700', fontSize: '15px', cursor: 'pointer', border: 'none',
+            borderBottom: graphMode === 'ftr' ? '3px solid #1565C0' : '3px solid transparent',
+            background: graphMode === 'ftr' ? '#E3F2FD' : 'transparent',
+            color: graphMode === 'ftr' ? '#1565C0' : '#666'
+          }}
+        >📊 FTR Graphs</button>
+        <button
+          onClick={() => setGraphMode('rfid')}
+          style={{
+            padding: '12px 30px', fontWeight: '700', fontSize: '15px', cursor: 'pointer', border: 'none',
+            borderBottom: graphMode === 'rfid' ? '3px solid #E65100' : '3px solid transparent',
+            background: graphMode === 'rfid' ? '#FFF3E0' : 'transparent',
+            color: graphMode === 'rfid' ? '#E65100' : '#666'
+          }}
+        >📡 RFID Graphs</button>
+      </div>
+
       <div className="graph-manager-header">
         <div>
-          <h2>📊 I-V Curve Graph Manager</h2>
-          <p className="subtitle">Upload and manage I-V curve graphs for all power ratings. These graphs will be automatically used in FTR report generation.</p>
+          <h2>{graphMode === 'rfid' ? '📡 RFID I-V Curve Graph Manager' : '📊 I-V Curve Graph Manager'}</h2>
+          <p className="subtitle">Upload and manage I-V curve graphs for all power ratings. These graphs will be automatically used in {graphMode === 'rfid' ? 'RFID' : 'FTR'} report generation.</p>
         </div>
         {sortedPowers.length > 0 && isSuperAdmin() && (
           <button onClick={clearAllGraphs} className="btn-clear-all">
@@ -304,7 +329,7 @@ const GraphManager = () => {
         <div className="empty-state-graph">
           <div className="empty-icon">📊</div>
           <h3>No Graphs Uploaded Yet</h3>
-          <p>Upload I-V curve graph images to use them in FTR report generation</p>
+          <p>Upload I-V curve graph images to use them in {graphMode === 'rfid' ? 'RFID' : 'FTR'} report generation</p>
         </div>
       )}
 
@@ -381,6 +406,20 @@ export const getRandomGraphForPower = async (power, moduleType = 'monofacial') =
   }
   
   return null;
+};
+
+// Export utility function to get RFID graphs from server
+export const getStoredRFIDGraphs = async () => {
+  try {
+    const response = await axios.get(getApiEndpointExternal('/rfid/graphs'));
+    if (response.data.success) {
+      return response.data.graphs || {};
+    }
+    return {};
+  } catch (error) {
+    console.error('Failed to get RFID graphs from server:', error);
+    return {};
+  }
 };
 
 export default GraphManager;

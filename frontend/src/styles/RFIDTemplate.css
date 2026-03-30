@@ -34,16 +34,15 @@
 .rfid-company-name {
   font-size: 12pt;
   font-weight: 700;
-  color: #cc0000;
+  color: #1a237e;
   margin-bottom: 1px;
 }
 
 .rfid-company-addr {
   font-size: 9pt;
   font-weight: 700;
-  color: #cc0000;
+  color: #1a237e;
   line-height: 1.45;
-  font-style: italic;
 }
 
 /* ===== SERIAL NUMBER & TID ===== */
@@ -71,8 +70,15 @@
 .rfid-spec-heading {
   font-size: 9.5pt;
   font-weight: 700;
-  color: #d00;
+  color: #1a237e;
   text-decoration: underline;
+  margin-bottom: 1mm;
+}
+
+.rfid-spec-line {
+  height: 2px;
+  background: #cc0000;
+  border: none;
   margin-bottom: 2mm;
 }
 
@@ -84,17 +90,13 @@
   margin-bottom: 3mm;
 }
 
-.rfid-spec-table thead tr {
-  background: #e8e8e8;
-}
-
 .rfid-spec-table th {
   border: 0.5pt solid #000;
   padding: 2pt 4pt;
   font-weight: 700;
   font-size: 9pt;
   text-align: left;
-  color: #cc0000;
+  color: #DAA520;
 }
 
 .rfid-col-sno { width: 7%; text-align: center; }
@@ -117,7 +119,7 @@
 .rfid-iv-heading {
   font-size: 9.5pt;
   font-weight: 700;
-  color: #d00;
+  color: #1a237e;
   text-decoration: underline;
   margin: 2mm 0 2mm 0;
 }

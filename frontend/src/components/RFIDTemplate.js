@@ -29,10 +29,10 @@ const RFIDTemplate = ({ testData, graphImage }) => {
         </div>
         <div className="rfid-company-block">
           <div className="rfid-company-name">Gautam Solar Private Limited</div>
-          <div className="rfid-company-addr">7 km Milestone, Tosham Road</div>
+          <div className="rfid-company-addr">7 Km Milestone, Tosham Road</div>
           <div className="rfid-company-addr">Dist. Bhiwani</div>
-          <div className="rfid-company-addr">Bawani Khera HR 127032</div>
-          <div className="rfid-company-addr">India</div>
+          <div className="rfid-company-addr">Bawani Khera</div>
+          <div className="rfid-company-addr">HR 127032</div>
         </div>
       </div>
 
@@ -50,13 +50,14 @@ const RFIDTemplate = ({ testData, graphImage }) => {
 
       {/* Detailed Specification underlined heading */}
       <div className="rfid-spec-heading">Detailed Specification:</div>
+      <hr className="rfid-spec-line" />
 
       {/* Specification Table */}
       <table className="rfid-spec-table">
         <thead>
           <tr>
             <th className="rfid-col-sno"><u>S/no.</u></th>
-            <th className="rfid-col-spec"><u>Specification</u></th>
+            <th className="rfid-col-spec"><u>Specifications</u></th>
             <th className="rfid-col-val"><u>Values</u></th>
           </tr>
         </thead>

@@ -3,7 +3,7 @@ import * as XLSX from 'xlsx';
 import html2pdf from 'html2pdf.js';
 import axios from 'axios';
 import RFIDTemplate from './RFIDTemplate';
-import { getStoredGraphs } from './GraphManager';
+import { getStoredRFIDGraphs } from './GraphManager';
 import '../styles/BulkRFID.css';
 
 const BulkRFIDGenerator = () => {
@@ -201,9 +201,9 @@ const BulkRFIDGenerator = () => {
       return;
     }
 
-    const storedGraphs = await getStoredGraphs();
+    const storedGraphs = await getStoredRFIDGraphs();
     if (Object.keys(storedGraphs).length === 0) {
-      alert('No graphs found! Please upload graphs in Graph Manager first.');
+      alert('No RFID graphs found! Please upload graphs in Graph Manager (RFID tab) first.');
       return;
     }
 

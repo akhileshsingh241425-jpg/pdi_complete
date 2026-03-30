@@ -17,6 +17,99 @@ def allowed_image(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXTENSIONS
 
 
+# ============= RFID IV GRAPH MANAGEMENT =============
+
+@rfid_upload_bp.route('/api/rfid/graphs', methods=['GET'])
+def get_rfid_graphs():
+    """Get all uploaded RFID IV curve graphs organized by wattage"""
+    try:
+        graphs = {}
+        if os.path.exists(RFID_GRAPHS_FOLDER):
+            for filename in os.listdir(RFID_GRAPHS_FOLDER):
+                if allowed_image(filename):
+                    parts = filename.split('_')
+                    if parts:
+                        wattage = parts[0]
+                        if wattage not in graphs:
+                            graphs[wattage] = []
+                        filepath = os.path.join(RFID_GRAPHS_FOLDER, filename)
+                        try:
+                            with open(filepath, 'rb') as f:
+                                img_data = f.read()
+                                ext = filename.rsplit('.', 1)[1].lower()
+                                mime = 'image/jpeg' if ext in ['jpg', 'jpeg'] else 'image/png'
+                                b64 = base64.b64encode(img_data).decode('utf-8')
+                                graphs[wattage].append(f"data:{mime};base64,{b64}")
+                        except Exception as e:
+                            print(f"Error reading {filename}: {e}")
+                            continue
+        return jsonify({'success': True, 'graphs': graphs}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@rfid_upload_bp.route('/api/rfid/graphs/upload', methods=['POST'])
+def upload_rfid_graphs():
+    """Upload RFID IV curve graph images for a specific wattage"""
+    try:
+        wattage = request.form.get('wattage')
+        if not wattage:
+            return jsonify({'error': 'Wattage not specified'}), 400
+        if 'files' not in request.files:
+            return jsonify({'error': 'No files provided'}), 400
+
+        files = request.files.getlist('files')
+        uploaded = []
+        existing_count = 0
+        for f in os.listdir(RFID_GRAPHS_FOLDER):
+            if f.startswith(f"{wattage}_"):
+                existing_count += 1
+
+        for i, file in enumerate(files):
+            if file and allowed_image(file.filename):
+                ext = file.filename.rsplit('.', 1)[1].lower()
+                new_filename = f"{wattage}_{existing_count + i + 1}.{ext}"
+                filepath = os.path.join(RFID_GRAPHS_FOLDER, new_filename)
+                file.save(filepath)
+                uploaded.append(new_filename)
+
+        return jsonify({
+            'success': True,
+            'message': f'{len(uploaded)} RFID graphs uploaded for {wattage}W',
+            'uploaded': uploaded
+        }), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@rfid_upload_bp.route('/api/rfid/graphs/<wattage>', methods=['DELETE'])
+def delete_rfid_graphs(wattage):
+    """Delete all RFID graphs for a specific wattage"""
+    try:
+        deleted = 0
+        for filename in os.listdir(RFID_GRAPHS_FOLDER):
+            if filename.startswith(f"{wattage}_"):
+                os.remove(os.path.join(RFID_GRAPHS_FOLDER, filename))
+                deleted += 1
+        return jsonify({'success': True, 'message': f'{deleted} RFID graphs deleted for {wattage}W'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@rfid_upload_bp.route('/api/rfid/graphs/clear', methods=['DELETE'])
+def clear_all_rfid_graphs():
+    """Delete all RFID graphs"""
+    try:
+        deleted = 0
+        for filename in os.listdir(RFID_GRAPHS_FOLDER):
+            if allowed_image(filename):
+                os.remove(os.path.join(RFID_GRAPHS_FOLDER, filename))
+                deleted += 1
+        return jsonify({'success': True, 'message': f'{deleted} RFID graphs deleted'}), 200
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
 @rfid_upload_bp.route('/api/rfid/upload-bulk', methods=['POST'])
 def upload_bulk_rfid():
     """Upload multiple RFID PDFs and return their file paths"""

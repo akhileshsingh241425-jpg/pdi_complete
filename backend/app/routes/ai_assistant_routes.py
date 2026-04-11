@@ -160,10 +160,11 @@ def get_all_mrp_data(company):
         
         def fetch_party(party_name):
             try:
+                print(f"MRP API: Fetching {party_name}...")
                 response = requests.post(
                     BARCODE_TRACKING_API,
                     json={'party_name': party_name},
-                    timeout=45
+                    timeout=180
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -171,10 +172,12 @@ def get_all_mrp_data(company):
                         party_data = data.get('data', [])
                         for item in party_data:
                             item['sub_party'] = party_name
-                        print(f"Fetched {len(party_data)} records from party: {party_name}")
+                        print(f"MRP API: Got {len(party_data)} records from {party_name}")
                         return party_data
+            except requests.exceptions.Timeout:
+                print(f"MRP API TIMEOUT for {party_name} (180s)")
             except Exception as e:
-                print(f"Error fetching from {party_name}: {str(e)}")
+                print(f"MRP API Error for {party_name}: {str(e)}")
             return []
         
         # Fetch all parties in parallel

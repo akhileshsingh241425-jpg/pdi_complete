@@ -233,10 +233,11 @@ const AIAssistant = () => {
         company_id: companyId,
         company_name: targetCompany
       }, {
-        responseType: 'blob'
+        responseType: 'blob',
+        timeout: 120000
       });
 
-      // Check if response is actually JSON error (not Excel)
+      // Check if response is actually JSON error (not CSV/Excel)
       const contentType = response.headers['content-type'] || '';
       if (contentType.includes('application/json')) {
         const text = await response.data.text();
@@ -244,11 +245,15 @@ const AIAssistant = () => {
         throw new Error(errorData.error || 'Server returned error');
       }
 
+      // Determine file extension from content type
+      const isCSV = contentType.includes('text/csv');
+      const fileExt = isCSV ? 'csv' : 'xlsx';
+
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', `${exportType}_${targetCompany}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      link.setAttribute('download', `${exportType}_${targetCompany}_${new Date().toISOString().slice(0, 10)}.${fileExt}`);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -257,7 +262,7 @@ const AIAssistant = () => {
       // Add success message to chat
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `✅ Excel downloaded: ${exportType} data for ${targetCompany}`
+        content: `✅ Data downloaded: ${exportType} data for ${targetCompany} (${fileExt.toUpperCase()})`
       }]);
     } catch (error) {
       console.error('Excel download error:', error);

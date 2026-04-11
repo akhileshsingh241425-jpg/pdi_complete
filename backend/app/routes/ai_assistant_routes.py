@@ -156,25 +156,32 @@ def get_all_mrp_data(company):
         ]
     
     try:
-        for party_name in party_names_to_fetch:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
+        def fetch_party(party_name):
             try:
                 response = requests.post(
                     BARCODE_TRACKING_API,
                     json={'party_name': party_name},
-                    timeout=60
+                    timeout=45
                 )
                 if response.status_code == 200:
                     data = response.json()
                     if data.get('status') == 'success':
                         party_data = data.get('data', [])
-                        # Tag each record with sub_party name
                         for item in party_data:
                             item['sub_party'] = party_name
-                        all_data.extend(party_data)
-                        print(f"✅ Fetched {len(party_data)} records from party: {party_name}")
+                        print(f"Fetched {len(party_data)} records from party: {party_name}")
+                        return party_data
             except Exception as e:
-                print(f"⚠️ Error fetching from {party_name}: {str(e)}")
-                continue
+                print(f"Error fetching from {party_name}: {str(e)}")
+            return []
+        
+        # Fetch all parties in parallel
+        with ThreadPoolExecutor(max_workers=len(party_names_to_fetch)) as executor:
+            futures = {executor.submit(fetch_party, p): p for p in party_names_to_fetch}
+            for future in as_completed(futures):
+                all_data.extend(future.result())
         
         if all_data:
             return {'success': True, 'data': all_data}
@@ -4101,10 +4108,10 @@ def get_all_tracking_data():
 
 @ai_assistant_bp.route('/ai/export/excel', methods=['POST'])
 def export_to_excel():
-    """Export FTR data to Excel based on user request"""
+    """Export FTR data to Excel/CSV based on user request - FAST version using CSV"""
     try:
-        if not EXCEL_AVAILABLE:
-            return jsonify({'success': False, 'error': 'openpyxl not installed on server'}), 500
+        import csv
+        import re
         
         data = request.json
         export_type = data.get('type', 'all')  # all, company, pending, packed, dispatched, binning, rejected
@@ -4114,13 +4121,11 @@ def export_to_excel():
         # Resolve company_id from company_name if not provided
         if not company_id and company_name and company_name != 'All':
             try:
-                # Try exact match first, then LIKE
                 company_result = db.session.execute(text(
                     "SELECT id FROM companies WHERE company_name = :name"
                 ), {'name': company_name})
                 company_row = company_result.fetchone()
                 if not company_row:
-                    # Try partial match
                     company_result = db.session.execute(text(
                         "SELECT id FROM companies WHERE company_name LIKE :name LIMIT 1"
                     ), {'name': f'%{company_name.split()[0]}%'})
@@ -4128,30 +4133,102 @@ def export_to_excel():
                 if company_row:
                     company_id = company_row[0]
                     print(f"Resolved company_id={company_id} for '{company_name}'")
-                else:
-                    print(f"WARNING: Could not resolve company_id for '{company_name}'")
             except Exception as e:
                 print(f"Company ID lookup error: {e}")
         
-        wb = openpyxl.Workbook()
-        ws = wb.active
-        ws.title = "FTR Data"
+        def make_csv_response(headers, rows, filename):
+            """Fast CSV file generation"""
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+            writer.writerow(headers)
+            for idx, row in enumerate(rows, 1):
+                writer.writerow([idx] + list(row))
+            
+            csv_bytes = io.BytesIO(buffer.getvalue().encode('utf-8-sig'))  # BOM for Excel
+            csv_bytes.seek(0)
+            return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
         
-        # Styles
-        header_font = Font(bold=True, color="FFFFFF")
-        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
-        thin_border = Border(
-            left=Side(style='thin'),
-            right=Side(style='thin'),
-            top=Side(style='thin'),
-            bottom=Side(style='thin')
-        )
+        def make_csv_response_direct(headers, data_rows, filename):
+            """Fast CSV from list of lists"""
+            buffer = io.StringIO()
+            writer = csv.writer(buffer)
+            writer.writerow(headers)
+            writer.writerows(data_rows)
+            
+            csv_bytes = io.BytesIO(buffer.getvalue().encode('utf-8-sig'))
+            csv_bytes.seek(0)
+            return send_file(csv_bytes, mimetype='text/csv', as_attachment=True, download_name=filename)
         
         query_params = {}
         
-        if export_type == 'pending':
-            # Export pending barcodes (assigned but not packed)
-            ws.title = "Pending Barcodes"
+        # ===== PACKED EXPORT (MRP API) =====
+        if export_type == 'packed':
+            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Pack Date", "Sub Party", "Status"]
+            
+            mrp_result = get_all_mrp_data(company_name)
+            if not mrp_result.get('success') or not mrp_result.get('data'):
+                return jsonify({'success': False, 'error': f'MRP API se data nahi mila for {company_name}'}), 500
+            
+            total_from_api = len(mrp_result['data'])
+            barcodes = [b for b in mrp_result['data'] if b.get('pallet_no') and not b.get('dispatch_party')]
+            
+            if len(barcodes) == 0:
+                return jsonify({
+                    'success': False, 
+                    'error': f'{company_name}: koi packed module nahi mila. Total records: {total_from_api} (sab dispatched)'
+                }), 404
+            
+            data_rows = []
+            for idx, b in enumerate(barcodes, 1):
+                ro = b.get('running_order', '') or ''
+                bin_match = re.search(r'i-?(\d+)', ro, re.IGNORECASE)
+                binning = f"I{bin_match.group(1)}" if bin_match else ''
+                data_rows.append([idx, b.get('barcode',''), ro, binning, b.get('pallet_no',''), b.get('date',''), b.get('sub_party',''), 'Packed'])
+            
+            filename = f"Packed_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            return make_csv_response_direct(headers, data_rows, filename)
+        
+        # ===== DISPATCHED EXPORT (MRP API) =====
+        elif export_type == 'dispatched':
+            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Dispatch Party", "Dispatch Date", "Sub Party"]
+            
+            mrp_result = get_all_mrp_data(company_name)
+            if not mrp_result.get('success') or not mrp_result.get('data'):
+                return jsonify({'success': False, 'error': f'MRP API se data nahi mila for {company_name}'}), 500
+            
+            barcodes = [b for b in mrp_result['data'] if b.get('dispatch_party') or b.get('status') == 'dispatched']
+            
+            if len(barcodes) == 0:
+                return jsonify({'success': False, 'error': f'{company_name}: koi dispatched module nahi mila'}), 404
+            
+            data_rows = []
+            for idx, b in enumerate(barcodes, 1):
+                ro = b.get('running_order', '') or ''
+                bin_match = re.search(r'i-?(\d+)', ro, re.IGNORECASE)
+                binning = f"I{bin_match.group(1)}" if bin_match else ''
+                data_rows.append([idx, b.get('barcode',''), ro, binning, b.get('pallet_no',''), 
+                                  b.get('dispatch_party',''), b.get('dispatch_date', b.get('date','')), b.get('sub_party','')])
+            
+            filename = f"Dispatched_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            return make_csv_response_direct(headers, data_rows, filename)
+        
+        # ===== BINNING EXPORT (Database) =====
+        elif export_type == 'binning':
+            headers = ["S.No", "Serial Number", "PDI Number", "Company", "Pmax", "Binning", "Class"]
+            
+            query = """
+                SELECT m.serial_number, m.pdi_number, c.company_name, m.pmax, m.binning, m.class_status
+                FROM ftr_master_serials m
+                JOIN companies c ON m.company_id = c.id
+                WHERE m.binning IS NOT NULL AND m.binning != ''
+            """
+            if company_id:
+                query += " AND m.company_id = :cid"
+                query_params['cid'] = int(company_id)
+            query += " ORDER BY m.binning, m.serial_number"
+        
+        # ===== PENDING EXPORT (Database) =====
+        elif export_type == 'pending':
             headers = ["S.No", "Serial Number", "PDI Number", "Company", "Status", "Binning", "Class"]
             
             query = """
@@ -4164,139 +4241,10 @@ def export_to_excel():
             if company_id:
                 query += " AND m.company_id = :cid"
                 query_params['cid'] = int(company_id)
-            query += " ORDER BY c.company_name, m.pdi_number, m.serial_number"
-            
-        elif export_type == 'packed':
-            # Export packed modules from MRP API (all sub-parties)
-            import re
-            ws.title = "Packed Modules"
-            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Pack Date", "Sub Party", "Status"]
-            
-            # Use get_all_mrp_data to fetch from ALL sub-parties
-            mrp_result = get_all_mrp_data(company_name)
-            if mrp_result.get('success') and mrp_result.get('data'):
-                total_from_api = len(mrp_result['data'])
-                # Packed = has pallet_no but NOT dispatched (no dispatch_party)
-                barcodes = [b for b in mrp_result['data'] if b.get('pallet_no') and not b.get('dispatch_party')]
-                
-                if len(barcodes) == 0:
-                    return jsonify({
-                        'success': False, 
-                        'error': f'{company_name} ke liye koi packed (non-dispatched) module nahi mila. Total MRP records: {total_from_api} (sab dispatched ho chuke hain)'
-                    }), 404
-                
-                # Write headers
-                for col, header in enumerate(headers, 1):
-                    cell = ws.cell(row=1, column=col, value=header)
-                    cell.font = header_font
-                    cell.fill = header_fill
-                    cell.border = thin_border
-                
-                # Write data
-                for idx, barcode in enumerate(barcodes, 1):
-                    running_order = barcode.get('running_order', '') or ''
-                    # Extract binning from running_order (e.g., "R-3 i-2" -> "I2")
-                    binning = ''
-                    bin_match = re.search(r'i-?(\d+)', running_order, re.IGNORECASE)
-                    if bin_match:
-                        binning = f"I{bin_match.group(1)}"
-                    
-                    ws.cell(row=idx+1, column=1, value=idx).border = thin_border
-                    ws.cell(row=idx+1, column=2, value=barcode.get('barcode', '')).border = thin_border
-                    ws.cell(row=idx+1, column=3, value=running_order).border = thin_border
-                    ws.cell(row=idx+1, column=4, value=binning).border = thin_border
-                    ws.cell(row=idx+1, column=5, value=barcode.get('pallet_no', '')).border = thin_border
-                    ws.cell(row=idx+1, column=6, value=barcode.get('date', '')).border = thin_border
-                    ws.cell(row=idx+1, column=7, value=barcode.get('sub_party', '')).border = thin_border
-                    ws.cell(row=idx+1, column=8, value='Packed').border = thin_border
-                
-                # Auto-width columns
-                for col in ws.columns:
-                    max_length = max(len(str(cell.value or '')) for cell in col)
-                    ws.column_dimensions[col[0].column_letter].width = max_length + 2
-                
-                # Save to buffer
-                buffer = io.BytesIO()
-                wb.save(buffer)
-                buffer.seek(0)
-                
-                filename = f"Packed_Modules_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                               as_attachment=True, download_name=filename)
-            else:
-                return jsonify({'success': False, 'error': f'MRP API error: No data found for {company_name}'}), 500
-                
-        elif export_type == 'dispatched':
-            # Export dispatched modules from MRP API (all sub-parties)
-            import re
-            ws.title = "Dispatched Modules"
-            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Dispatch Party", "Dispatch Date", "Sub Party", "Status"]
-            
-            # Use get_all_mrp_data to fetch from ALL sub-parties
-            mrp_result = get_all_mrp_data(company_name)
-            if mrp_result.get('success') and mrp_result.get('data'):
-                barcodes = [b for b in mrp_result['data'] if b.get('dispatch_party') or b.get('status') == 'dispatched']
-                
-                # Write headers
-                for col, header in enumerate(headers, 1):
-                    cell = ws.cell(row=1, column=col, value=header)
-                    cell.font = header_font
-                    cell.fill = header_fill
-                    cell.border = thin_border
-                
-                # Write data
-                for idx, barcode in enumerate(barcodes, 1):
-                    running_order = barcode.get('running_order', '') or ''
-                    # Extract binning from running_order
-                    binning = ''
-                    bin_match = re.search(r'i-?(\d+)', running_order, re.IGNORECASE)
-                    if bin_match:
-                        binning = f"I{bin_match.group(1)}"
-                    
-                    ws.cell(row=idx+1, column=1, value=idx).border = thin_border
-                    ws.cell(row=idx+1, column=2, value=barcode.get('barcode', '')).border = thin_border
-                    ws.cell(row=idx+1, column=3, value=running_order).border = thin_border
-                    ws.cell(row=idx+1, column=4, value=binning).border = thin_border
-                    ws.cell(row=idx+1, column=5, value=barcode.get('pallet_no', '')).border = thin_border
-                    ws.cell(row=idx+1, column=6, value=barcode.get('dispatch_party', '')).border = thin_border
-                    ws.cell(row=idx+1, column=7, value=barcode.get('dispatch_date', barcode.get('date', ''))).border = thin_border
-                    ws.cell(row=idx+1, column=8, value=barcode.get('sub_party', '')).border = thin_border
-                    ws.cell(row=idx+1, column=9, value='Dispatched').border = thin_border
-                
-                # Auto-width columns
-                for col in ws.columns:
-                    max_length = max(len(str(cell.value or '')) for cell in col)
-                    ws.column_dimensions[col[0].column_letter].width = max_length + 2
-                
-                buffer = io.BytesIO()
-                wb.save(buffer)
-                buffer.seek(0)
-                
-                filename = f"Dispatched_Modules_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                               as_attachment=True, download_name=filename)
-            else:
-                return jsonify({'success': False, 'error': f'MRP API error: No data found for {company_name}'}), 500
-                
-        elif export_type == 'binning':
-            # Export binning data
-            ws.title = "Binning Data"
-            headers = ["S.No", "Serial Number", "PDI Number", "Company", "Pmax", "Binning", "Class"]
-            
-            query = """
-                SELECT m.serial_number, m.pdi_number, c.company_name, m.pmax, m.binning, m.class_status
-                FROM ftr_master_serials m
-                JOIN companies c ON m.company_id = c.id
-                WHERE m.binning IS NOT NULL AND m.binning != ''
-            """
-            if company_id:
-                query += " AND m.company_id = :cid"
-                query_params['cid'] = int(company_id)
-            query += " ORDER BY c.company_name, m.binning, m.serial_number"
-            
+            query += " ORDER BY m.pdi_number, m.serial_number"
+        
+        # ===== REJECTED EXPORT (Database) =====
         elif export_type == 'rejected':
-            # Export rejected modules
-            ws.title = "Rejected Modules"
             headers = ["S.No", "Serial Number", "PDI Number", "Company", "Pmax", "Binning", "Class Status"]
             
             query = """
@@ -4308,199 +4256,78 @@ def export_to_excel():
             if company_id:
                 query += " AND m.company_id = :cid"
                 query_params['cid'] = int(company_id)
-            query += " ORDER BY c.company_name, m.serial_number"
+            query += " ORDER BY m.serial_number"
         
+        # ===== PACKED NOT PDI EXPORT (MRP + DB) =====
         elif export_type == 'packed_not_pdi':
-            # Export packed modules that are NOT in PDI and NOT rejected
-            import re
-            ws.title = "Packed Not in PDI"
             headers = ["S.No", "Barcode", "Company", "Running Order", "Binning", "Pallet No", "Pack Date", "PDI Status", "Class Status"]
             
-            # Get MRP data directly
             mrp_result = get_all_mrp_data(company_name)
             if not mrp_result.get('success'):
-                return jsonify({'success': False, 'error': 'Failed to fetch MRP data'}), 500
+                return jsonify({'success': False, 'error': 'MRP API failed'}), 500
             
-            # Get company_id from database
-            company_result = db.session.execute(text(
-                "SELECT id FROM companies WHERE company_name LIKE :name"
-            ), {'name': f'%{company_name.split()[0]}%'})
-            company_row = company_result.fetchone()
-            
-            if not company_row:
+            cid = company_id
+            if not cid:
                 return jsonify({'success': False, 'error': f'Company {company_name} not found'}), 404
             
-            company_id = company_row[0]
-            
-            # Get all serials in database with PDI or rejected
-            db_result = db.session.execute(text("""
-                SELECT serial_number, pdi_number, class_status
-                FROM ftr_master_serials
-                WHERE company_id = :cid
-            """), {'cid': company_id})
-            
+            db_result = db.session.execute(text(
+                "SELECT serial_number, pdi_number, class_status FROM ftr_master_serials WHERE company_id = :cid"
+            ), {'cid': cid})
             db_serials = {}
             for row in db_result.fetchall():
-                db_serials[row[0]] = {
-                    'pdi': row[1],
-                    'class_status': row[2]
-                }
+                db_serials[row[0]] = {'pdi': row[1], 'class_status': row[2]}
             
-            # Write headers
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col, value=header)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.border = thin_border
-            
-            # Filter MRP packed modules
-            row_num = 2
+            data_rows = []
+            idx = 1
             for b in mrp_result.get('data', []):
-                barcode = b.get('barcode', '')
-                pallet_no = b.get('pallet_no', '')
-                status = b.get('status', '')
-                dispatch_party = b.get('dispatch_party')
-                ro = b.get('running_order', '')
-                pack_date = b.get('date', '')
-                
-                # Check if packed (not dispatched)
-                if status == 'packed' and not dispatch_party:
-                    # Check if NOT in PDI and NOT rejected
+                if b.get('pallet_no') and not b.get('dispatch_party'):
+                    barcode = b.get('barcode', '')
                     db_info = db_serials.get(barcode, {})
-                    has_pdi = db_info.get('pdi')
-                    is_rejected = db_info.get('class_status') == 'REJECTED'
-                    
-                    if not has_pdi and not is_rejected:
-                        # Extract binning from running_order
+                    if not db_info.get('pdi') and db_info.get('class_status') != 'REJECTED':
+                        ro = b.get('running_order', '') or ''
                         bin_match = re.search(r'i-?(\d+)', ro, re.IGNORECASE)
-                        binning = f"I{bin_match.group(1)}" if bin_match else 'Unknown'
-                        
-                        ws.cell(row=row_num, column=1, value=row_num-1).border = thin_border
-                        ws.cell(row=row_num, column=2, value=barcode).border = thin_border
-                        ws.cell(row=row_num, column=3, value=company_name).border = thin_border
-                        ws.cell(row=row_num, column=4, value=ro).border = thin_border
-                        ws.cell(row=row_num, column=5, value=binning).border = thin_border
-                        ws.cell(row=row_num, column=6, value=pallet_no).border = thin_border
-                        ws.cell(row=row_num, column=7, value=pack_date).border = thin_border
-                        ws.cell(row=row_num, column=8, value='Not Assigned').border = thin_border
-                        ws.cell(row=row_num, column=9, value='OK').border = thin_border
-                        row_num += 1
+                        binning = f"I{bin_match.group(1)}" if bin_match else ''
+                        data_rows.append([idx, barcode, company_name, ro, binning, b.get('pallet_no',''), b.get('date',''), 'Not Assigned', 'OK'])
+                        idx += 1
             
-            # Auto-width columns
-            for col in ws.columns:
-                max_length = max(len(str(cell.value or '')) for cell in col)
-                ws.column_dimensions[col[0].column_letter].width = max_length + 2
+            filename = f"Packed_Not_PDI_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            return make_csv_response_direct(headers, data_rows, filename)
+        
+        # ===== ALL / SUMMARY EXPORT =====
+        elif export_type == 'all':
+            headers = ["S.No", "Company", "Total FTR", "OK", "Rejected", "Available", "Assigned"]
             
-            buffer = io.BytesIO()
-            wb.save(buffer)
-            buffer.seek(0)
-            
-            filename = f"Packed_Not_in_PDI_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                           as_attachment=True, download_name=filename)
-            
-        else:  # all - company summary
-            ws.title = "Company Summary"
-            headers = ["S.No", "Company", "Total FTR", "OK", "Rejected", "Available", "Assigned", "Packed (MRP)", "Dispatched (MRP)"]
-            
-            # Get all companies
             result = db.session.execute(text("SELECT id, company_name FROM companies"))
             companies = result.fetchall()
             
-            # Write headers
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col, value=header)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.border = thin_border
+            data_rows = []
+            for idx, comp in enumerate(companies, 1):
+                cid, cname = comp[0], comp[1]
+                total_q = db.session.execute(text("SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = :cid"), {'cid': cid}).fetchone()[0]
+                ok_q = db.session.execute(text("SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = :cid AND (class_status IS NULL OR class_status != 'REJECTED')"), {'cid': cid}).fetchone()[0]
+                rejected_q = db.session.execute(text("SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = :cid AND class_status = 'REJECTED'"), {'cid': cid}).fetchone()[0]
+                available_q = db.session.execute(text("SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = :cid AND status = 'available'"), {'cid': cid}).fetchone()[0]
+                assigned_q = db.session.execute(text("SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = :cid AND status = 'assigned'"), {'cid': cid}).fetchone()[0]
+                data_rows.append([idx, cname, total_q, ok_q, rejected_q, available_q, assigned_q])
             
-            row_num = 2
-            for idx, company in enumerate(companies, 1):
-                cid, cname = company[0], company[1]
-                
-                # Get counts
-                total_q = db.session.execute(text(f"SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = {cid}")).fetchone()[0]
-                ok_q = db.session.execute(text(f"SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = {cid} AND (class_status IS NULL OR class_status != 'REJECTED')")).fetchone()[0]
-                rejected_q = db.session.execute(text(f"SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = {cid} AND class_status = 'REJECTED'")).fetchone()[0]
-                available_q = db.session.execute(text(f"SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = {cid} AND status = 'available'")).fetchone()[0]
-                assigned_q = db.session.execute(text(f"SELECT COUNT(*) FROM ftr_master_serials WHERE company_id = {cid} AND status = 'assigned'")).fetchone()[0]
-                
-                # Get MRP data
-                ext_data = get_external_packed_dispatch_data(cname)
-                packed = ext_data.get('packed_count', 0) if ext_data.get('success') else 0
-                dispatched = ext_data.get('dispatched_count', 0) if ext_data.get('success') else 0
-                
-                ws.cell(row=row_num, column=1, value=idx).border = thin_border
-                ws.cell(row=row_num, column=2, value=cname).border = thin_border
-                ws.cell(row=row_num, column=3, value=total_q).border = thin_border
-                ws.cell(row=row_num, column=4, value=ok_q).border = thin_border
-                ws.cell(row=row_num, column=5, value=rejected_q).border = thin_border
-                ws.cell(row=row_num, column=6, value=available_q).border = thin_border
-                ws.cell(row=row_num, column=7, value=assigned_q).border = thin_border
-                ws.cell(row=row_num, column=8, value=packed).border = thin_border
-                ws.cell(row=row_num, column=9, value=dispatched).border = thin_border
-                row_num += 1
-            
-            # Auto-width columns
-            for col in ws.columns:
-                max_length = max(len(str(cell.value or '')) for cell in col)
-                ws.column_dimensions[col[0].column_letter].width = max_length + 2
-            
-            buffer = io.BytesIO()
-            wb.save(buffer)
-            buffer.seek(0)
-            
-            filename = f"FTR_Summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                           as_attachment=True, download_name=filename)
+            filename = f"FTR_Summary_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            return make_csv_response_direct(headers, data_rows, filename)
         
-        # For database queries (pending, binning, rejected)
+        else:
+            return jsonify({'success': False, 'error': 'Invalid export type'}), 400
+        
+        # ===== Execute database queries (binning, pending, rejected) =====
         if export_type in ['pending', 'binning', 'rejected']:
             print(f"Excel export: type={export_type}, company_id={company_id}, company_name={company_name}")
             result = db.session.execute(text(query), query_params)
             rows = result.fetchall()
-            print(f"Excel export: {len(rows)} rows fetched for {export_type}")
+            print(f"Excel export: {len(rows)} rows for {export_type}")
             
             if len(rows) == 0:
-                return jsonify({
-                    'success': False, 
-                    'error': f'{company_name} ke liye koi {export_type} data nahi mila'
-                }), 404
+                return jsonify({'success': False, 'error': f'{company_name}: koi {export_type} data nahi mila'}), 404
             
-            # Write headers
-            for col, header in enumerate(headers, 1):
-                cell = ws.cell(row=1, column=col, value=header)
-                cell.font = header_font
-                cell.fill = header_fill
-                cell.border = thin_border
-            
-            # Write data
-            for idx, row in enumerate(rows, 1):
-                ws.cell(row=idx+1, column=1, value=idx).border = thin_border
-                for col, val in enumerate(row, 2):
-                    ws.cell(row=idx+1, column=col, value=val or '').border = thin_border
-            
-            # Auto-width columns
-            for col in ws.columns:
-                max_length = 0
-                for cell in col:
-                    try:
-                        if cell.value:
-                            max_length = max(max_length, len(str(cell.value)))
-                    except:
-                        pass
-                ws.column_dimensions[col[0].column_letter].width = min(max_length + 2, 50)
-            
-            buffer = io.BytesIO()
-            wb.save(buffer)
-            buffer.seek(0)
-            
-            type_names = {'pending': 'Pending', 'binning': 'Binning', 'rejected': 'Rejected'}
-            filename = f"{type_names.get(export_type, 'FTR')}_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                           as_attachment=True, download_name=filename)
-        
-        return jsonify({'success': False, 'error': 'Invalid export type'}), 400
+            filename = f"{export_type.title()}_{company_name}_{datetime.now().strftime('%Y%m%d_%H%M')}.csv"
+            return make_csv_response(headers, rows, filename)
         
     except Exception as e:
         print(f"Excel export error: {str(e)}")

@@ -236,6 +236,14 @@ const AIAssistant = () => {
         responseType: 'blob'
       });
 
+      // Check if response is actually JSON error (not Excel)
+      const contentType = response.headers['content-type'] || '';
+      if (contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const errorData = JSON.parse(text);
+        throw new Error(errorData.error || 'Server returned error');
+      }
+
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -253,9 +261,20 @@ const AIAssistant = () => {
       }]);
     } catch (error) {
       console.error('Excel download error:', error);
+      // Handle blob error responses from server
+      let errorMsg = error.message;
+      if (error.response?.data instanceof Blob) {
+        try {
+          const text = await error.response.data.text();
+          const errorData = JSON.parse(text);
+          errorMsg = errorData.error || errorData.message || error.message;
+        } catch (e) {
+          // blob wasn't JSON, use default message
+        }
+      }
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: `❌ Excel download failed: ${error.response?.data?.error || error.message}`,
+        content: `❌ Excel download failed: ${errorMsg}`,
         isError: true
       }]);
     } finally {

@@ -4142,16 +4142,16 @@ def export_to_excel():
             query += " ORDER BY c.company_name, m.pdi_number, m.serial_number"
             
         elif export_type == 'packed':
-            # Export packed modules from MRP API
+            # Export packed modules from MRP API (all sub-parties)
+            import re
             ws.title = "Packed Modules"
-            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Pack Date", "Status"]
+            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Pack Date", "Sub Party", "Status"]
             
-            # Get from external API
-            mrp_party_name = get_mrp_party_name(company_name)
-            response = requests.post(BARCODE_TRACKING_API, json={'party_name': mrp_party_name}, timeout=30)
-            if response.status_code == 200:
-                api_data = response.json()
-                barcodes = [b for b in api_data.get('data', []) if b.get('status') == 'packed']
+            # Use get_all_mrp_data to fetch from ALL sub-parties
+            mrp_result = get_all_mrp_data(company_name)
+            if mrp_result.get('success') and mrp_result.get('data'):
+                # Packed = status 'packed' AND no dispatch_party
+                barcodes = [b for b in mrp_result['data'] if b.get('status') == 'packed' and not b.get('dispatch_party')]
                 
                 # Write headers
                 for col, header in enumerate(headers, 1):
@@ -4161,7 +4161,6 @@ def export_to_excel():
                     cell.border = thin_border
                 
                 # Write data
-                import re
                 for idx, barcode in enumerate(barcodes, 1):
                     running_order = barcode.get('running_order', '') or ''
                     # Extract binning from running_order (e.g., "R-3 i-2" -> "I2")
@@ -4176,7 +4175,8 @@ def export_to_excel():
                     ws.cell(row=idx+1, column=4, value=binning).border = thin_border
                     ws.cell(row=idx+1, column=5, value=barcode.get('pallet_no', '')).border = thin_border
                     ws.cell(row=idx+1, column=6, value=barcode.get('date', '')).border = thin_border
-                    ws.cell(row=idx+1, column=7, value='Packed').border = thin_border
+                    ws.cell(row=idx+1, column=7, value=barcode.get('sub_party', '')).border = thin_border
+                    ws.cell(row=idx+1, column=8, value='Packed').border = thin_border
                 
                 # Auto-width columns
                 for col in ws.columns:
@@ -4192,18 +4192,18 @@ def export_to_excel():
                 return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                as_attachment=True, download_name=filename)
             else:
-                return jsonify({'success': False, 'error': 'MRP API error'}), 500
+                return jsonify({'success': False, 'error': f'MRP API error: No data found for {company_name}'}), 500
                 
         elif export_type == 'dispatched':
-            # Export dispatched modules from MRP API
+            # Export dispatched modules from MRP API (all sub-parties)
+            import re
             ws.title = "Dispatched Modules"
-            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Dispatch Party", "Dispatch Date", "Status"]
+            headers = ["S.No", "Barcode", "Running Order", "Binning", "Pallet No", "Dispatch Party", "Dispatch Date", "Sub Party", "Status"]
             
-            mrp_party_name = get_mrp_party_name(company_name)
-            response = requests.post(BARCODE_TRACKING_API, json={'party_name': mrp_party_name}, timeout=30)
-            if response.status_code == 200:
-                api_data = response.json()
-                barcodes = [b for b in api_data.get('data', []) if b.get('dispatch_party') or b.get('status') == 'dispatched']
+            # Use get_all_mrp_data to fetch from ALL sub-parties
+            mrp_result = get_all_mrp_data(company_name)
+            if mrp_result.get('success') and mrp_result.get('data'):
+                barcodes = [b for b in mrp_result['data'] if b.get('dispatch_party') or b.get('status') == 'dispatched']
                 
                 # Write headers
                 for col, header in enumerate(headers, 1):
@@ -4213,7 +4213,6 @@ def export_to_excel():
                     cell.border = thin_border
                 
                 # Write data
-                import re
                 for idx, barcode in enumerate(barcodes, 1):
                     running_order = barcode.get('running_order', '') or ''
                     # Extract binning from running_order
@@ -4229,7 +4228,8 @@ def export_to_excel():
                     ws.cell(row=idx+1, column=5, value=barcode.get('pallet_no', '')).border = thin_border
                     ws.cell(row=idx+1, column=6, value=barcode.get('dispatch_party', '')).border = thin_border
                     ws.cell(row=idx+1, column=7, value=barcode.get('dispatch_date', barcode.get('date', ''))).border = thin_border
-                    ws.cell(row=idx+1, column=8, value='Dispatched').border = thin_border
+                    ws.cell(row=idx+1, column=8, value=barcode.get('sub_party', '')).border = thin_border
+                    ws.cell(row=idx+1, column=9, value='Dispatched').border = thin_border
                 
                 # Auto-width columns
                 for col in ws.columns:
@@ -4244,7 +4244,7 @@ def export_to_excel():
                 return send_file(buffer, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                                as_attachment=True, download_name=filename)
             else:
-                return jsonify({'success': False, 'error': 'MRP API error'}), 500
+                return jsonify({'success': False, 'error': f'MRP API error: No data found for {company_name}'}), 500
                 
         elif export_type == 'binning':
             # Export binning data

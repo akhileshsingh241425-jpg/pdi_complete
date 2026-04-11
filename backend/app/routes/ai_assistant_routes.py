@@ -4114,12 +4114,22 @@ def export_to_excel():
         # Resolve company_id from company_name if not provided
         if not company_id and company_name and company_name != 'All':
             try:
+                # Try exact match first, then LIKE
                 company_result = db.session.execute(text(
-                    "SELECT id FROM companies WHERE company_name LIKE :name"
-                ), {'name': f'%{company_name.split()[0]}%'})
+                    "SELECT id FROM companies WHERE company_name = :name"
+                ), {'name': company_name})
                 company_row = company_result.fetchone()
+                if not company_row:
+                    # Try partial match
+                    company_result = db.session.execute(text(
+                        "SELECT id FROM companies WHERE company_name LIKE :name LIMIT 1"
+                    ), {'name': f'%{company_name.split()[0]}%'})
+                    company_row = company_result.fetchone()
                 if company_row:
                     company_id = company_row[0]
+                    print(f"Resolved company_id={company_id} for '{company_name}'")
+                else:
+                    print(f"WARNING: Could not resolve company_id for '{company_name}'")
             except Exception as e:
                 print(f"Company ID lookup error: {e}")
         
@@ -4446,8 +4456,16 @@ def export_to_excel():
         
         # For database queries (pending, binning, rejected)
         if export_type in ['pending', 'binning', 'rejected']:
+            print(f"Excel export: type={export_type}, company_id={company_id}, company_name={company_name}")
             result = db.session.execute(text(query), query_params)
             rows = result.fetchall()
+            print(f"Excel export: {len(rows)} rows fetched for {export_type}")
+            
+            if len(rows) == 0:
+                return jsonify({
+                    'success': False, 
+                    'error': f'{company_name} ke liye koi {export_type} data nahi mila'
+                }), 404
             
             # Write headers
             for col, header in enumerate(headers, 1):
@@ -4464,8 +4482,14 @@ def export_to_excel():
             
             # Auto-width columns
             for col in ws.columns:
-                max_length = max(len(str(cell.value or '')) for cell in col)
-                ws.column_dimensions[col[0].column_letter].width = max_length + 2
+                max_length = 0
+                for cell in col:
+                    try:
+                        if cell.value:
+                            max_length = max(max_length, len(str(cell.value)))
+                    except:
+                        pass
+                ws.column_dimensions[col[0].column_letter].width = min(max_length + 2, 50)
             
             buffer = io.BytesIO()
             wb.save(buffer)

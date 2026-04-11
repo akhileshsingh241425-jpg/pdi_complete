@@ -4111,6 +4111,18 @@ def export_to_excel():
         company_id = data.get('company_id')
         company_name = data.get('company_name', 'All')
         
+        # Resolve company_id from company_name if not provided
+        if not company_id and company_name and company_name != 'All':
+            try:
+                company_result = db.session.execute(text(
+                    "SELECT id FROM companies WHERE company_name LIKE :name"
+                ), {'name': f'%{company_name.split()[0]}%'})
+                company_row = company_result.fetchone()
+                if company_row:
+                    company_id = company_row[0]
+            except Exception as e:
+                print(f"Company ID lookup error: {e}")
+        
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "FTR Data"
@@ -4125,6 +4137,8 @@ def export_to_excel():
             bottom=Side(style='thin')
         )
         
+        query_params = {}
+        
         if export_type == 'pending':
             # Export pending barcodes (assigned but not packed)
             ws.title = "Pending Barcodes"
@@ -4138,7 +4152,8 @@ def export_to_excel():
                 WHERE m.status = 'assigned' AND p.id IS NULL
             """
             if company_id:
-                query += f" AND m.company_id = {company_id}"
+                query += " AND m.company_id = :cid"
+                query_params['cid'] = int(company_id)
             query += " ORDER BY c.company_name, m.pdi_number, m.serial_number"
             
         elif export_type == 'packed':
@@ -4150,8 +4165,15 @@ def export_to_excel():
             # Use get_all_mrp_data to fetch from ALL sub-parties
             mrp_result = get_all_mrp_data(company_name)
             if mrp_result.get('success') and mrp_result.get('data'):
-                # Packed = status 'packed' AND no dispatch_party
-                barcodes = [b for b in mrp_result['data'] if b.get('status') == 'packed' and not b.get('dispatch_party')]
+                total_from_api = len(mrp_result['data'])
+                # Packed = has pallet_no but NOT dispatched (no dispatch_party)
+                barcodes = [b for b in mrp_result['data'] if b.get('pallet_no') and not b.get('dispatch_party')]
+                
+                if len(barcodes) == 0:
+                    return jsonify({
+                        'success': False, 
+                        'error': f'{company_name} ke liye koi packed (non-dispatched) module nahi mila. Total MRP records: {total_from_api} (sab dispatched ho chuke hain)'
+                    }), 404
                 
                 # Write headers
                 for col, header in enumerate(headers, 1):
@@ -4258,7 +4280,8 @@ def export_to_excel():
                 WHERE m.binning IS NOT NULL AND m.binning != ''
             """
             if company_id:
-                query += f" AND m.company_id = {company_id}"
+                query += " AND m.company_id = :cid"
+                query_params['cid'] = int(company_id)
             query += " ORDER BY c.company_name, m.binning, m.serial_number"
             
         elif export_type == 'rejected':
@@ -4270,10 +4293,11 @@ def export_to_excel():
                 SELECT m.serial_number, m.pdi_number, c.company_name, m.pmax, m.binning, m.class_status
                 FROM ftr_master_serials m
                 JOIN companies c ON m.company_id = c.id
-                WHERE m.class_status = 'REJECTED' OR m.class_status = 'rejected'
+                WHERE (m.class_status = 'REJECTED' OR m.class_status = 'rejected')
             """
             if company_id:
-                query += f" AND m.company_id = {company_id}"
+                query += " AND m.company_id = :cid"
+                query_params['cid'] = int(company_id)
             query += " ORDER BY c.company_name, m.serial_number"
         
         elif export_type == 'packed_not_pdi':
@@ -4422,7 +4446,7 @@ def export_to_excel():
         
         # For database queries (pending, binning, rejected)
         if export_type in ['pending', 'binning', 'rejected']:
-            result = db.session.execute(text(query))
+            result = db.session.execute(text(query), query_params)
             rows = result.fetchall()
             
             # Write headers

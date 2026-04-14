@@ -269,7 +269,7 @@ def generate_excel_only():
         # Generate IPQC Check Sheet in exact reference format
         excel_path = generate_ipqc_checksheet(
             date=data.get('date'),
-            shift=data.get('shift', 'A'),
+            shift=data.get('shift', 'Day'),
             po_number=po_number,
             cell_manufacturer=cell_manufacturer,
             cell_efficiency=cell_efficiency,
@@ -350,7 +350,7 @@ def generate_complete():
         # Generate Excel in exact IPQC Check Sheet format
         excel_path = generate_ipqc_checksheet(
             date=data.get('date'),
-            shift=data.get('shift', 'A'),
+            shift=data.get('shift', 'Day'),
             po_number=po_number,
             cell_manufacturer=cell_manufacturer,
             cell_efficiency=cell_efficiency,
@@ -550,7 +550,7 @@ def auto_checksheet():
 
         excel_path = generate_ipqc_checksheet(
             date=data.get('date'),
-            shift=data.get('shift', 'A'),
+            shift=data.get('shift', 'Day'),
             po_number=data.get('po_number', ''),
             cell_manufacturer=data.get('cell_manufacturer', 'Solar Space'),
             cell_efficiency=float(data.get('cell_efficiency', 25.7)),

@@ -15,7 +15,7 @@ const IPQCForm = () => {
   // ══════════════════════════════════════════
   const [formData, setFormData] = useState({
     date: new Date().toISOString().split('T')[0],
-    shift: 'A',
+    shift: 'Day',
     customer_id: 'GSPL/IPQC/IPC/003',
     po_number: '',
     serial_prefix: 'GS04875KG302250',
@@ -239,9 +239,8 @@ const IPQCForm = () => {
               <div className="form-group">
                 <label htmlFor="shift">🕐 Shift <span className="required">*</span></label>
                 <select id="shift" name="shift" value={formData.shift} onChange={handleInputChange} required>
-                  <option value="A">Shift A</option>
-                  <option value="B">Shift B</option>
-                  <option value="C">Shift C</option>
+                  <option value="Day">Day Shift</option>
+                  <option value="Night">Night Shift</option>
                 </select>
               </div>
 

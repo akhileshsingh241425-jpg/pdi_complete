@@ -11,6 +11,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.drawing.image import Image as XlImage
+from openpyxl.worksheet.page import PageMargins
 
 
 # ──────────────────────────────────────────────
@@ -106,7 +107,7 @@ def _gen_serials(prefix, start, count=5):
 # ──────────────────────────────────────────────
 def generate_ipqc_checksheet(
     date=None,
-    shift='A',
+    shift='Day',
     po_number='',
     cell_manufacturer='Solar Space',
     cell_efficiency=25.7,
@@ -173,7 +174,8 @@ def generate_ipqc_checksheet(
     ws.merge_cells('A4:C4')
     _cell(ws, 4, 1, f'Date :-  {date}', FONT_BOLD, alignment=Alignment(horizontal='left', vertical='center'))
     _cell(ws, 4, 4, f' Time :-  {_shift_time(shift)}', FONT_BOLD, alignment=ALIGN_CENTER)
-    _cell(ws, 4, 6, f'Shift  {shift}', FONT_BOLD, alignment=ALIGN_CENTER_V)
+    shift_label = 'Day' if shift in ('Day', 'A') else 'Night'
+    _cell(ws, 4, 6, f'Shift  {shift_label}', FONT_BOLD, alignment=ALIGN_CENTER_V)
     _cell(ws, 4, 5, None, FONT_BOLD, alignment=ALIGN_CENTER)  # E4 style
     _cell(ws, 4, 7, None, FONT_BOLD, alignment=ALIGN_CENTER_V)  # G4 style
     ws.merge_cells('H4:O4')
@@ -209,6 +211,17 @@ def generate_ipqc_checksheet(
         for cell in row:
             cell.border = THIN_BORDER
 
+    # ── Page Setup (match IPQC_FILLED_FINAL.xlsx exactly) ──
+    ws.page_setup.orientation = 'landscape'
+    ws.page_setup.paperSize = 9  # A4
+    ws.page_setup.scale = 71
+    ws.page_setup.fitToHeight = 0
+    ws.page_margins = PageMargins(left=0.25, right=0.25, top=0.507, bottom=0.14, header=0.0, footer=0.0)
+    ws.print_options.horizontalCentered = True
+    ws.print_area = 'A1:O140'
+    ws.print_title_rows = '1:6'
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+
     # ── Save ──
     output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'generated_pdfs')
     os.makedirs(output_dir, exist_ok=True)
@@ -223,8 +236,9 @@ def generate_ipqc_checksheet(
 # Shift time helper
 # ──────────────────────────────────────────────
 def _shift_time(shift):
-    mapping = {'A': '06:00 - 14:00', 'B': '14:00 - 22:00', 'C': '22:00 - 06:00'}
-    return mapping.get(shift, '06:00 - 14:00')
+    mapping = {'Day': '08:00 AM - 08:00 PM', 'Night': '08:00 PM - 08:00 AM',
+               'A': '08:00 AM - 08:00 PM', 'B': '08:00 PM - 08:00 AM'}
+    return mapping.get(shift, '08:00 AM - 08:00 PM')
 
 
 # ══════════════════════════════════════════════
@@ -1212,9 +1226,30 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 139, 15, 'OK', N, alignment=AC)
 
 
+def _rand_time(base_hour, base_min, vary_min=15):
+    """Generate a realistic time with ±vary_min variation, returns like '8:20 AM'."""
+    total_min = base_hour * 60 + base_min + random.randint(-vary_min, vary_min)
+    total_min = total_min % (24 * 60)
+    h = total_min // 60
+    m = total_min % 60
+    period = 'AM' if h < 12 else 'PM'
+    display_h = h % 12
+    if display_h == 0:
+        display_h = 12
+    return f'{display_h}:{m:02d} {period}'
+
+
 def _shift_start(shift):
-    return {'A': '06:00', 'B': '14:00', 'C': '22:00'}.get(shift, '06:00')
+    """Random time near shift start: Day ~8:00-8:30 AM, Night ~8:00-8:30 PM."""
+    if shift in ('Day', 'A'):
+        return _rand_time(8, 15, vary_min=15)
+    else:
+        return _rand_time(20, 15, vary_min=15)
 
 
 def _shift_mid(shift):
-    return {'A': '10:00', 'B': '18:00', 'C': '02:00'}.get(shift, '10:00')
+    """Random time near mid-shift: Day ~12:00-1:00 PM, Night ~12:00-1:00 AM."""
+    if shift in ('Day', 'A'):
+        return _rand_time(12, 30, vary_min=30)
+    else:
+        return _rand_time(0, 30, vary_min=30)

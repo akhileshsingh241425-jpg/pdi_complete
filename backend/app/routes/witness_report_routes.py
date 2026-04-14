@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify, send_file
 from app.models.database import db
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 import os
 import io
 from datetime import datetime
@@ -38,11 +38,13 @@ def get_ftr_data_for_serials(company_id, serial_numbers):
         return {}
     
     try:
-        result = db.session.execute(text("""
+        query = text("""
             SELECT serial_number, pmax, isc, voc, ipm, vpm, ff, efficiency, binning, class_status
             FROM ftr_master_serials
             WHERE company_id = :cid AND serial_number IN :serials
-        """), {'cid': company_id, 'serials': tuple(serial_numbers)})
+        """).bindparams(bindparam('serials', expanding=True))
+        
+        result = db.session.execute(query, {'cid': company_id, 'serials': list(serial_numbers)})
         
         data = {}
         for row in result.fetchall():
@@ -54,6 +56,8 @@ def get_ftr_data_for_serials(company_id, serial_numbers):
         return data
     except Exception as e:
         print(f"Error getting FTR data: {e}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 
@@ -97,8 +101,28 @@ def generate_witness_report():
         if not serial_numbers:
             return jsonify({'success': False, 'error': 'No serial numbers provided'}), 400
         
-        # Get FTR data - use frontend generated data
-        ftr_data = generated_ftr_data
+        # Get REAL FTR data from database first
+        db_ftr_data = get_ftr_data_for_serials(company_id, serial_numbers) if company_id else {}
+        
+        # Merge: DB data takes priority, then frontend generated data as fallback
+        ftr_data = {}
+        for serial in serial_numbers:
+            if serial in db_ftr_data and db_ftr_data[serial].get('pmax'):
+                ftr_data[serial] = db_ftr_data[serial]
+            elif serial in generated_ftr_data:
+                ftr_data[serial] = generated_ftr_data[serial]
+            else:
+                ftr_data[serial] = {}
+        
+        # Convert all FTR values to float for proper Excel formatting
+        for serial in ftr_data:
+            for key in ['pmax', 'isc', 'voc', 'ipm', 'vpm', 'ff', 'efficiency']:
+                val = ftr_data[serial].get(key)
+                if val is not None and val != '':
+                    try:
+                        ftr_data[serial][key] = round(float(val), 2)
+                    except (ValueError, TypeError):
+                        pass
         
         # Create workbook
         wb = openpyxl.Workbook()

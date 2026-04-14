@@ -1102,17 +1102,17 @@ function WitnessReport() {
           {/* Generate Button */}
           <button
             onClick={generateReport}
-            disabled={generating || serialNumbers.length === 0}
+            disabled={generating || serialNumbers.length === 0 || showConfigModal || Object.keys(generatedFTRData).length === 0}
             style={{
               width: '100%',
               padding: '14px',
-              background: generating || serialNumbers.length === 0 
+              background: generating || serialNumbers.length === 0 || showConfigModal || Object.keys(generatedFTRData).length === 0
                 ? '#ccc' 
                 : 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)',
               color: 'white',
               border: 'none',
               borderRadius: '10px',
-              cursor: generating || serialNumbers.length === 0 ? 'not-allowed' : 'pointer',
+              cursor: generating || serialNumbers.length === 0 || showConfigModal || Object.keys(generatedFTRData).length === 0 ? 'not-allowed' : 'pointer',
               fontSize: '15px',
               fontWeight: '700',
               boxShadow: generating || serialNumbers.length === 0 ? 'none' : '0 4px 15px rgba(76,175,80,0.4)',

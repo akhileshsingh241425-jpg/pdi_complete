@@ -2512,3 +2512,552 @@ def mrp_cache_search():
         
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
+
+# ============================================================
+# Sales Parties (from logistics.umanerp.com getSalesParty API)
+# ============================================================
+SALES_PARTY_API = 'https://logistics.umanerp.com/api/party/getSalesParty'
+SALES_PERSON_ID = os.getenv('SALES_PERSON_ID', 'c8166f4a-0897-4239-a26d-ee42e9cee22a')
+
+# Cache: {'data': [...parties...], 'timestamp': float}
+SALES_PARTY_CACHE = {'data': None, 'timestamp': 0}
+SALES_PARTY_CACHE_TTL = 600  # 10 minutes
+
+
+@ftr_bp.route('/sales-parties', methods=['GET'])
+def get_sales_parties():
+    """
+    Returns the full list of sales parties (companies) from the
+    logistics.umanerp.com getSalesParty API. Cached for 10 minutes.
+
+    Response shape:
+        { "success": true, "count": N, "parties": [ {id, companyName, city, state, gst}, ... ] }
+    """
+    try:
+        force = request.args.get('force_refresh', '').lower() == 'true'
+        now = time.time()
+
+        if (not force
+                and SALES_PARTY_CACHE['data'] is not None
+                and (now - SALES_PARTY_CACHE['timestamp']) < SALES_PARTY_CACHE_TTL):
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "count": len(SALES_PARTY_CACHE['data']),
+                "parties": SALES_PARTY_CACHE['data']
+            })
+
+        person_id = request.args.get('person_id') or SALES_PERSON_ID
+        resp = http_requests.post(
+            SALES_PARTY_API,
+            json={"personId": person_id},
+            timeout=60
+        )
+
+        if resp.status_code != 200:
+            return jsonify({
+                "success": False,
+                "error": f"Sales party API returned HTTP {resp.status_code}",
+                "detail": resp.text[:300]
+            }), 502
+
+        payload = resp.json()
+        raw_parties = payload.get('data') or []
+
+        parties = []
+        for p in raw_parties:
+            party_id = p.get('PartyNameId')
+            name = (p.get('PartyName') or '').strip()
+            if not party_id or not name:
+                continue
+            parties.append({
+                "id": party_id,
+                "companyName": name,
+                "city": p.get('City') or '',
+                "state": p.get('State') or '',
+                "gst": p.get('GSTNo') or '',
+                "status": p.get('Status') or ''
+            })
+
+        # Sort alphabetically
+        parties.sort(key=lambda x: x['companyName'].lower())
+
+        SALES_PARTY_CACHE['data'] = parties
+        SALES_PARTY_CACHE['timestamp'] = now
+
+        return jsonify({
+            "success": True,
+            "cached": False,
+            "count": len(parties),
+            "parties": parties
+        })
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({"success": False, "error": "Sales party API timeout"}), 504
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/dispatch-by-party/<party_id>', methods=['GET'])
+def get_dispatch_by_party(party_id):
+    """
+    Fetch dispatch tracking (pallet/vehicle/invoice info) directly from the
+    MRP party-dispatch-history.php API for ANY party_id (UUID).
+
+    Unlike /dispatch-tracking/<company_id>, this does NOT require the company
+    to exist in the local DB. Useful for new sales parties pulled from
+    logistics.umanerp.com getSalesParty.
+
+    Query params:
+        - days   : how many days back to fetch (default 730)
+        - name   : optional display name to echo back
+
+    Response shape (same as /dispatch-tracking/<company_id>):
+        { success, company_name, summary, pallet_groups, dispatch_groups }
+    """
+    try:
+        if not party_id or len(party_id) < 10:
+            return jsonify({"success": False, "error": "Invalid party_id"}), 400
+
+        days = int(request.args.get('days', '730'))
+        company_name = request.args.get('name', '') or party_id
+
+        from datetime import timedelta
+        to_date = datetime.now().strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+        print(f"[Dispatch By Party] party_id={party_id}, range={from_date}..{to_date}")
+
+        mrp_lookup = {}
+        page = 1
+        max_pages = 50
+
+        while page <= max_pages:
+            try:
+                payload = {
+                    'party_id': party_id,
+                    'from_date': from_date,
+                    'to_date': to_date,
+                    'page': page,
+                    'limit': 10000
+                }
+                response = http_requests.post(
+                    'https://umanmrp.in/api/party-dispatch-history.php',
+                    json=payload,
+                    timeout=120,
+                    headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+                )
+
+                if response.status_code != 200:
+                    print(f"[Dispatch By Party] page {page} HTTP {response.status_code}")
+                    break
+
+                data = response.json()
+                dispatch_summary = data.get('dispatch_summary', [])
+                if not dispatch_summary:
+                    break
+
+                for dispatch in dispatch_summary:
+                    dispatch_date = dispatch.get('dispatch_date') or dispatch.get('date', '')
+                    vehicle_no = dispatch.get('vehicle_no', '') or 'Unknown'
+                    invoice_no = dispatch.get('invoice_no', '')
+                    factory_name = dispatch.get('factory_name', '')
+                    dispatch_party = dispatch.get('dispatch_party', '') or vehicle_no
+                    pallet_nos = dispatch.get('pallet_nos', {})
+
+                    if isinstance(pallet_nos, dict):
+                        for pallet_no, barcodes_str in pallet_nos.items():
+                            if not isinstance(barcodes_str, str):
+                                continue
+                            for serial in barcodes_str.strip().split():
+                                serial = serial.strip().upper()
+                                if not serial:
+                                    continue
+                                mrp_lookup[serial] = {
+                                    'pallet_no': pallet_no,
+                                    'dispatch_party': dispatch_party,
+                                    'vehicle_no': vehicle_no,
+                                    'dispatch_date': dispatch_date,
+                                    'invoice_no': invoice_no,
+                                    'factory_name': factory_name
+                                }
+
+                print(f"[Dispatch By Party] page {page}: {len(dispatch_summary)} entries (running total {len(mrp_lookup)})")
+                page += 1
+            except Exception as e:
+                print(f"[Dispatch By Party] page {page} error: {e}")
+                break
+
+        total = len(mrp_lookup)
+
+        if total == 0:
+            return jsonify({
+                "success": True,
+                "company_name": company_name,
+                "party_id": party_id,
+                "summary": {
+                    "total_assigned": 0, "packed": 0, "dispatched": 0, "pending": 0,
+                    "packed_percent": 0, "dispatched_percent": 0, "pending_percent": 0
+                },
+                "pallet_groups": [],
+                "dispatch_groups": [],
+                "message": "No dispatch data found in MRP system for this party"
+            })
+
+        vehicle_map = {}
+        pallet_map = {}
+
+        for barcode, info in mrp_lookup.items():
+            vehicle = info.get('vehicle_no') or info.get('dispatch_party') or 'Unknown'
+            pallet_no = info.get('pallet_no', '')
+            dispatch_date = info.get('dispatch_date', '')
+            invoice_no = info.get('invoice_no', '')
+            factory_name = info.get('factory_name', '')
+
+            if vehicle not in vehicle_map:
+                vehicle_map[vehicle] = {
+                    'dispatch_party': vehicle,
+                    'vehicle_no': vehicle,
+                    'dispatch_date': dispatch_date,
+                    'invoice_no': invoice_no,
+                    'factory_name': factory_name,
+                    'module_count': 0,
+                    'pallets': set(),
+                    'serials': []
+                }
+            vehicle_map[vehicle]['module_count'] += 1
+            if pallet_no:
+                vehicle_map[vehicle]['pallets'].add(pallet_no)
+            if len(vehicle_map[vehicle]['serials']) < 50:
+                vehicle_map[vehicle]['serials'].append(barcode)
+
+            if pallet_no:
+                if pallet_no not in pallet_map:
+                    pallet_map[pallet_no] = {
+                        'pallet_no': pallet_no,
+                        'module_count': 0,
+                        'vehicle_no': vehicle,
+                        'dispatch_date': dispatch_date,
+                        'serials': []
+                    }
+                pallet_map[pallet_no]['module_count'] += 1
+                if len(pallet_map[pallet_no]['serials']) < 20:
+                    pallet_map[pallet_no]['serials'].append(barcode)
+
+        dispatch_groups = []
+        for v_name, v_data in vehicle_map.items():
+            dispatch_groups.append({
+                'dispatch_party': v_name,
+                'vehicle_no': v_data['vehicle_no'],
+                'dispatch_date': v_data['dispatch_date'],
+                'invoice_no': v_data['invoice_no'],
+                'factory_name': v_data['factory_name'],
+                'module_count': v_data['module_count'],
+                'pallet_count': len(v_data['pallets']),
+                'pallets': sorted(list(v_data['pallets'])),
+                'serials': v_data['serials']
+            })
+        dispatch_groups.sort(key=lambda x: x['module_count'], reverse=True)
+
+        pallet_groups = sorted(pallet_map.values(), key=lambda x: str(x['pallet_no']))
+
+        return jsonify({
+            "success": True,
+            "company_name": company_name,
+            "party_id": party_id,
+            "summary": {
+                "total_assigned": total,
+                "packed": 0,
+                "dispatched": total,
+                "pending": 0,
+                "packed_percent": 0,
+                "dispatched_percent": 100,
+                "pending_percent": 0
+            },
+            "pallet_groups": pallet_groups,
+            "dispatch_groups": dispatch_groups
+        })
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({"success": False, "error": "MRP API timeout"}), 504
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# ============================================================
+# Sales Parties (from logistics.umanerp.com getSalesParty API)
+# ============================================================
+SALES_PARTY_API = 'https://logistics.umanerp.com/api/party/getSalesParty'
+SALES_PERSON_ID = os.getenv('SALES_PERSON_ID', 'c8166f4a-0897-4239-a26d-ee42e9cee22a')
+
+# Cache: {'data': [...parties...], 'timestamp': float}
+SALES_PARTY_CACHE = {'data': None, 'timestamp': 0}
+SALES_PARTY_CACHE_TTL = 600  # 10 minutes
+
+
+@ftr_bp.route('/sales-parties', methods=['GET'])
+def get_sales_parties():
+    """
+    Returns the full list of sales parties (companies) from the
+    logistics.umanerp.com getSalesParty API. Cached for 10 minutes.
+
+    Response shape:
+        { "success": true, "count": N, "parties": [ {id, companyName, city, state, gst}, ... ] }
+    """
+    try:
+        force = request.args.get('force_refresh', '').lower() == 'true'
+        now = time.time()
+
+        if (not force
+                and SALES_PARTY_CACHE['data'] is not None
+                and (now - SALES_PARTY_CACHE['timestamp']) < SALES_PARTY_CACHE_TTL):
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "count": len(SALES_PARTY_CACHE['data']),
+                "parties": SALES_PARTY_CACHE['data']
+            })
+
+        person_id = request.args.get('person_id') or SALES_PERSON_ID
+        resp = http_requests.post(
+            SALES_PARTY_API,
+            json={"personId": person_id},
+            timeout=60
+        )
+
+        if resp.status_code != 200:
+            return jsonify({
+                "success": False,
+                "error": f"Sales party API returned HTTP {resp.status_code}",
+                "detail": resp.text[:300]
+            }), 502
+
+        payload = resp.json()
+        raw_parties = payload.get('data') or []
+
+        parties = []
+        for p in raw_parties:
+            party_id = p.get('PartyNameId')
+            name = (p.get('PartyName') or '').strip()
+            if not party_id or not name:
+                continue
+            parties.append({
+                "id": party_id,
+                "companyName": name,
+                "city": p.get('City') or '',
+                "state": p.get('State') or '',
+                "gst": p.get('GSTNo') or '',
+                "status": p.get('Status') or ''
+            })
+
+        # Sort alphabetically
+        parties.sort(key=lambda x: x['companyName'].lower())
+
+        SALES_PARTY_CACHE['data'] = parties
+        SALES_PARTY_CACHE['timestamp'] = now
+
+        return jsonify({
+            "success": True,
+            "cached": False,
+            "count": len(parties),
+            "parties": parties
+        })
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({"success": False, "error": "Sales party API timeout"}), 504
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/dispatch-by-party/<party_id>', methods=['GET'])
+def get_dispatch_by_party(party_id):
+    """
+    Fetch dispatch tracking (pallet/vehicle/invoice info) directly from the
+    MRP party-dispatch-history.php API for ANY party_id (UUID).
+
+    Unlike /dispatch-tracking/<company_id>, this does NOT require the company
+    to exist in the local DB. Useful for new sales parties pulled from
+    logistics.umanerp.com getSalesParty.
+
+    Query params:
+        - days   : how many days back to fetch (default 730)
+        - name   : optional display name to echo back
+
+    Response shape (same as /dispatch-tracking/<company_id>):
+        { success, company_name, summary, pallet_groups, dispatch_groups }
+    """
+    try:
+        if not party_id or len(party_id) < 10:
+            return jsonify({"success": False, "error": "Invalid party_id"}), 400
+
+        days = int(request.args.get('days', '730'))
+        company_name = request.args.get('name', '') or party_id
+
+        from datetime import timedelta
+        to_date = datetime.now().strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+        print(f"[Dispatch By Party] party_id={party_id}, range={from_date}..{to_date}")
+
+        mrp_lookup = {}
+        page = 1
+        max_pages = 50
+
+        while page <= max_pages:
+            try:
+                payload = {
+                    'party_id': party_id,
+                    'from_date': from_date,
+                    'to_date': to_date,
+                    'page': page,
+                    'limit': 10000
+                }
+                response = http_requests.post(
+                    'https://umanmrp.in/api/party-dispatch-history.php',
+                    json=payload,
+                    timeout=120,
+                    headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+                )
+
+                if response.status_code != 200:
+                    print(f"[Dispatch By Party] page {page} HTTP {response.status_code}")
+                    break
+
+                data = response.json()
+                dispatch_summary = data.get('dispatch_summary', [])
+                if not dispatch_summary:
+                    break
+
+                for dispatch in dispatch_summary:
+                    dispatch_date = dispatch.get('dispatch_date') or dispatch.get('date', '')
+                    vehicle_no = dispatch.get('vehicle_no', '') or 'Unknown'
+                    invoice_no = dispatch.get('invoice_no', '')
+                    factory_name = dispatch.get('factory_name', '')
+                    dispatch_party = dispatch.get('dispatch_party', '') or vehicle_no
+                    pallet_nos = dispatch.get('pallet_nos', {})
+
+                    if isinstance(pallet_nos, dict):
+                        for pallet_no, barcodes_str in pallet_nos.items():
+                            if not isinstance(barcodes_str, str):
+                                continue
+                            for serial in barcodes_str.strip().split():
+                                serial = serial.strip().upper()
+                                if not serial:
+                                    continue
+                                mrp_lookup[serial] = {
+                                    'pallet_no': pallet_no,
+                                    'dispatch_party': dispatch_party,
+                                    'vehicle_no': vehicle_no,
+                                    'dispatch_date': dispatch_date,
+                                    'invoice_no': invoice_no,
+                                    'factory_name': factory_name
+                                }
+
+                print(f"[Dispatch By Party] page {page}: {len(dispatch_summary)} entries (running total {len(mrp_lookup)})")
+                page += 1
+            except Exception as e:
+                print(f"[Dispatch By Party] page {page} error: {e}")
+                break
+
+        total = len(mrp_lookup)
+
+        if total == 0:
+            return jsonify({
+                "success": True,
+                "company_name": company_name,
+                "party_id": party_id,
+                "summary": {
+                    "total_assigned": 0, "packed": 0, "dispatched": 0, "pending": 0,
+                    "packed_percent": 0, "dispatched_percent": 0, "pending_percent": 0
+                },
+                "pallet_groups": [],
+                "dispatch_groups": [],
+                "message": "No dispatch data found in MRP system for this party"
+            })
+
+        vehicle_map = {}
+        pallet_map = {}
+
+        for barcode, info in mrp_lookup.items():
+            vehicle = info.get('vehicle_no') or info.get('dispatch_party') or 'Unknown'
+            pallet_no = info.get('pallet_no', '')
+            dispatch_date = info.get('dispatch_date', '')
+            invoice_no = info.get('invoice_no', '')
+            factory_name = info.get('factory_name', '')
+
+            if vehicle not in vehicle_map:
+                vehicle_map[vehicle] = {
+                    'dispatch_party': vehicle,
+                    'vehicle_no': vehicle,
+                    'dispatch_date': dispatch_date,
+                    'invoice_no': invoice_no,
+                    'factory_name': factory_name,
+                    'module_count': 0,
+                    'pallets': set(),
+                    'serials': []
+                }
+            vehicle_map[vehicle]['module_count'] += 1
+            if pallet_no:
+                vehicle_map[vehicle]['pallets'].add(pallet_no)
+            if len(vehicle_map[vehicle]['serials']) < 50:
+                vehicle_map[vehicle]['serials'].append(barcode)
+
+            if pallet_no:
+                if pallet_no not in pallet_map:
+                    pallet_map[pallet_no] = {
+                        'pallet_no': pallet_no,
+                        'module_count': 0,
+                        'vehicle_no': vehicle,
+                        'dispatch_date': dispatch_date,
+                        'serials': []
+                    }
+                pallet_map[pallet_no]['module_count'] += 1
+                if len(pallet_map[pallet_no]['serials']) < 20:
+                    pallet_map[pallet_no]['serials'].append(barcode)
+
+        dispatch_groups = []
+        for v_name, v_data in vehicle_map.items():
+            dispatch_groups.append({
+                'dispatch_party': v_name,
+                'vehicle_no': v_data['vehicle_no'],
+                'dispatch_date': v_data['dispatch_date'],
+                'invoice_no': v_data['invoice_no'],
+                'factory_name': v_data['factory_name'],
+                'module_count': v_data['module_count'],
+                'pallet_count': len(v_data['pallets']),
+                'pallets': sorted(list(v_data['pallets'])),
+                'serials': v_data['serials']
+            })
+        dispatch_groups.sort(key=lambda x: x['module_count'], reverse=True)
+
+        pallet_groups = sorted(pallet_map.values(), key=lambda x: str(x['pallet_no']))
+
+        return jsonify({
+            "success": True,
+            "company_name": company_name,
+            "party_id": party_id,
+            "summary": {
+                "total_assigned": total,
+                "packed": 0,
+                "dispatched": total,
+                "pending": 0,
+                "packed_percent": 0,
+                "dispatched_percent": 100,
+                "pending_percent": 0
+            },
+            "pallet_groups": pallet_groups,
+            "dispatch_groups": dispatch_groups
+        })
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({"success": False, "error": "MRP API timeout"}), 504
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500

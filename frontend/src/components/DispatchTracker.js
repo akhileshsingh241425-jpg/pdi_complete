@@ -92,8 +92,45 @@ const DispatchTracker = () => {
 
   const loadCompanies = async () => {
     try {
-      const data = await companyService.getAllCompanies();
-      setCompanies(data || []);
+      // 1. Local DB companies (have full PDI/production data)
+      let localCompanies = [];
+      try {
+        const data = await companyService.getAllCompanies();
+        localCompanies = (data || []).map(c => ({ ...c, source: 'local' }));
+      } catch (err) {
+        console.error('Error loading local companies:', err);
+      }
+
+      // 2. Sales parties from logistics.umanerp.com (dispatch-only)
+      let salesParties = [];
+      try {
+        const resp = await fetch(`${API_BASE_URL}/ftr/sales-parties`);
+        const result = await resp.json();
+        if (result.success && Array.isArray(result.parties)) {
+          salesParties = result.parties.map(p => ({
+            id: p.id,                      // PartyNameId (UUID)
+            companyName: p.companyName,
+            city: p.city,
+            state: p.state,
+            source: 'party'
+          }));
+        }
+      } catch (err) {
+        console.error('Error loading sales parties:', err);
+      }
+
+      // 3. Merge — prefer local entry if a party with the same name already exists locally
+      const localNameSet = new Set(
+        localCompanies.map(c => (c.companyName || '').trim().toLowerCase())
+      );
+      const merged = [
+        ...localCompanies,
+        ...salesParties.filter(
+          p => !localNameSet.has((p.companyName || '').trim().toLowerCase())
+        )
+      ];
+
+      setCompanies(merged);
     } catch (err) {
       console.error('Error loading companies:', err);
       setCompanies([]);
@@ -185,10 +222,14 @@ const DispatchTracker = () => {
       setLoading(true);
       setError(null);
       setExpandedPdi(null);
-      
+
       const timestamp = Date.now();
-      const url = `${API_BASE_URL}/ftr/pdi-production-status/${company.id}?t=${timestamp}`;
-      
+      // Sales parties (from external API) only have dispatch data — use the
+      // party-id endpoint. Local DB companies use the full production+dispatch endpoint.
+      const url = company.source === 'party'
+        ? `${API_BASE_URL}/ftr/dispatch-by-party/${company.id}?name=${encodeURIComponent(company.companyName || '')}&t=${timestamp}`
+        : `${API_BASE_URL}/ftr/pdi-production-status/${company.id}?t=${timestamp}`;
+
       console.log('Fetching URL:', url);
       const res = await fetch(url, {
         cache: 'no-store',
@@ -196,7 +237,7 @@ const DispatchTracker = () => {
       });
       const result = await res.json();
       console.log('PDI Production + Dispatch Status:', result);
-      
+
       if (result.success) {
         setProductionData(result);
       } else {
@@ -496,7 +537,9 @@ const DispatchTracker = () => {
           <option value="">-- Choose a Company --</option>
           {companies.map((company) => (
             <option key={company.id} value={company.id}>
-              {company.companyName} ({company.moduleWattage}W • {company.cellsPerModule} cells)
+              {company.source === 'party'
+                ? `${company.companyName}${company.city ? ' — ' + company.city : ''}`
+                : `${company.companyName} (${company.moduleWattage}W • ${company.cellsPerModule} cells)`}
             </option>
           ))}
         </select>

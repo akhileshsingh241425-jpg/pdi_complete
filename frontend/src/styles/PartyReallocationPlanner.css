@@ -669,6 +669,16 @@
 }
 .actual-barcode-textarea:focus { border-color: #2c6bbf; box-shadow: 0 0 0 3px rgba(44,107,191,0.12); }
 .actual-pdi-manual-count { font-size: 11px; color: #4f6581; }
+.saved-barcodes-banner {
+  background: #ecfdf5;
+  border: 1px solid #6ee7b7;
+  color: #065f46;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  margin: 8px 0 12px;
+}
+.saved-barcodes-banner .muted { color: #047857; font-style: italic; }
 
 /* Running Order & Dispatch breakdown sections */
 .ro-breakdown-section {

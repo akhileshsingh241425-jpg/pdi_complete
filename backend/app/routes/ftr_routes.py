@@ -2979,6 +2979,124 @@ def pdi_status(pdi_id):
     return jsonify(payload)
 
 
+# ---------------------------------------------------------------------------
+# Actual PDI Barcodes — independent storage (no FK to PDI card)
+# Used only for generating the actual-compare report. One row per pdi_id;
+# new upload replaces previous.
+# ---------------------------------------------------------------------------
+
+def _ensure_actual_pdi_barcodes_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS actual_pdi_barcodes (
+            pdi_id          VARCHAR(64) PRIMARY KEY,
+            party_name      VARCHAR(255) DEFAULT NULL,
+            filename        VARCHAR(255) DEFAULT NULL,
+            barcode_count   INT DEFAULT 0,
+            barcodes_json   LONGTEXT,
+            uploaded_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+
+@ftr_bp.route('/actual-pdi-barcodes/save', methods=['POST'])
+def save_actual_pdi_barcodes():
+    """Save / replace actual PDI barcodes for a pdi_id (independent storage)."""
+    try:
+        body = request.get_json(silent=True) or {}
+        pdi_id = str(body.get('pdi_id') or '').strip()
+        party_name = str(body.get('party_name') or '').strip() or None
+        filename = str(body.get('filename') or '').strip() or None
+        barcodes = body.get('barcodes') or []
+        if not pdi_id:
+            return jsonify({"success": False, "error": "pdi_id required"}), 400
+        if not isinstance(barcodes, list):
+            return jsonify({"success": False, "error": "barcodes must be a list"}), 400
+
+        cleaned = sorted({str(b).strip().upper() for b in barcodes if str(b).strip()})
+        payload = json.dumps(cleaned, ensure_ascii=False)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        _ensure_actual_pdi_barcodes_table(cursor)
+        cursor.execute("""
+            INSERT INTO actual_pdi_barcodes (pdi_id, party_name, filename, barcode_count, barcodes_json)
+            VALUES (%s, %s, %s, %s, %s)
+            ON DUPLICATE KEY UPDATE
+                party_name = VALUES(party_name),
+                filename = VALUES(filename),
+                barcode_count = VALUES(barcode_count),
+                barcodes_json = VALUES(barcodes_json)
+        """, (pdi_id, party_name, filename, len(cleaned), payload))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": True, "pdi_id": pdi_id, "count": len(cleaned)})
+    except Exception as e:
+        print(f"[save_actual_pdi_barcodes] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-barcodes/<pdi_id>', methods=['GET'])
+def get_actual_pdi_barcodes(pdi_id):
+    """Fetch saved actual PDI barcodes for a pdi_id."""
+    try:
+        pdi_id = str(pdi_id).strip()
+        if not pdi_id:
+            return jsonify({"success": False, "error": "pdi_id required"}), 400
+        conn = get_db_connection()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        _ensure_actual_pdi_barcodes_table(cursor)
+        cursor.execute("""
+            SELECT pdi_id, party_name, filename, barcode_count, barcodes_json,
+                   uploaded_at, updated_at
+            FROM actual_pdi_barcodes WHERE pdi_id = %s
+        """, (pdi_id,))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not row:
+            return jsonify({"success": True, "exists": False, "barcodes": []})
+        try:
+            bcs = json.loads(row.get('barcodes_json') or '[]')
+        except Exception:
+            bcs = []
+        return jsonify({
+            "success": True,
+            "exists": True,
+            "pdi_id": row.get('pdi_id'),
+            "party_name": row.get('party_name'),
+            "filename": row.get('filename'),
+            "count": row.get('barcode_count') or len(bcs),
+            "barcodes": bcs,
+            "uploaded_at": str(row.get('uploaded_at') or ''),
+            "updated_at": str(row.get('updated_at') or '')
+        })
+    except Exception as e:
+        print(f"[get_actual_pdi_barcodes] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-barcodes/<pdi_id>', methods=['DELETE'])
+def delete_actual_pdi_barcodes(pdi_id):
+    """Delete saved actual PDI barcodes for a pdi_id."""
+    try:
+        pdi_id = str(pdi_id).strip()
+        if not pdi_id:
+            return jsonify({"success": False, "error": "pdi_id required"}), 400
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        _ensure_actual_pdi_barcodes_table(cursor)
+        cursor.execute("DELETE FROM actual_pdi_barcodes WHERE pdi_id = %s", (pdi_id,))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[delete_actual_pdi_barcodes] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @ftr_bp.route('/pdi-actual-compare', methods=['POST'])
 def pdi_actual_compare():
     """Compare actual PDI barcodes (uploaded by user) against:

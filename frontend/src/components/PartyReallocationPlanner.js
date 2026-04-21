@@ -233,6 +233,8 @@ const PartyReallocationPlanner = () => {
   const [actualFileName, setActualFileName] = useState('');
   const [actualBarcodes, setActualBarcodes] = useState([]);
   const [manualBarcodeInput, setManualBarcodeInput] = useState('');
+  const [savedBarcodesMeta, setSavedBarcodesMeta] = useState(null); // {count, filename, updated_at}
+  const [savingBarcodes, setSavingBarcodes] = useState(false);
   const [actualCompareLoading, setActualCompareLoading] = useState(false);
   const [actualCompareError, setActualCompareError] = useState('');
   const [actualCompareData, setActualCompareData] = useState(null);
@@ -531,6 +533,12 @@ const PartyReallocationPlanner = () => {
     setPdiStatusLoading(true);
     setPdiStatusError('');
     setPdiStatusData(null);
+    // Reset previous PDI's barcode state when switching cards
+    setActualBarcodes([]);
+    setActualFileName('');
+    setManualBarcodeInput('');
+    setActualCompareData(null);
+    setSavedBarcodesMeta(null);
     try {
       const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}?party_id=${encodeURIComponent(partyId)}`);
       const data = await resp.json();
@@ -538,11 +546,58 @@ const PartyReallocationPlanner = () => {
         throw new Error(data?.error || 'Failed to fetch PDI status');
       }
       setPdiStatusData(data);
+      // Auto-load previously saved actual barcodes for this PDI (independent of card)
+      try {
+        const sr = await fetch(`${API_BASE_URL}/ftr/actual-pdi-barcodes/${encodeURIComponent(pid)}`);
+        const sj = await sr.json();
+        if (sr.ok && sj?.success && sj.exists) {
+          const bcs = sj.barcodes || [];
+          setActualBarcodes(bcs);
+          setActualFileName(sj.filename || '');
+          setSavedBarcodesMeta({
+            count: sj.count || bcs.length,
+            filename: sj.filename || '',
+            updated_at: sj.updated_at || sj.uploaded_at || ''
+          });
+          // Auto-run compare so summary + RO breakdown show actual-vs-plan immediately
+          if (bcs.length) {
+            const partyNameAuto = sj.party_name || detailPartyName || (parties.find((p) => p.id === partyId) || {}).companyName || '';
+            runActualCompareWith(pid, partyId, partyNameAuto, bcs);
+          }
+        }
+      } catch (e) { /* ignore — saved load is optional */ }
     } catch (err) {
       setPdiStatusError(err.message || 'Failed to fetch PDI status');
     } finally {
       setPdiStatusLoading(false);
     }
+  };
+
+  // Save actual barcodes to DB (independent of card — pdi_id used only as key)
+  const persistActualBarcodes = async (pdiId, partyName, barcodes, filename) => {
+    if (!pdiId || !barcodes?.length) return;
+    setSavingBarcodes(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/ftr/actual-pdi-barcodes/save`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdi_id: pdiId,
+          party_name: partyName || '',
+          filename: filename || '',
+          barcodes
+        })
+      });
+      const j = await resp.json();
+      if (resp.ok && j?.success) {
+        setSavedBarcodesMeta({
+          count: j.count,
+          filename: filename || '',
+          updated_at: new Date().toISOString()
+        });
+      }
+    } catch (e) { /* ignore — save is best-effort */ }
+    finally { setSavingBarcodes(false); }
   };
 
   const closePdiStatus = () => {
@@ -554,6 +609,7 @@ const PartyReallocationPlanner = () => {
     setActualBarcodes([]);
     setActualFileName('');
     setManualBarcodeInput('');
+    setSavedBarcodesMeta(null);
   };
 
   // ---- Actual PDI upload + compare ----
@@ -595,6 +651,35 @@ const PartyReallocationPlanner = () => {
     }
   };
 
+  const runActualCompareWith = async (pdiId, partyId, partyName, combined) => {
+    if (!pdiId || !partyId || !combined?.length) return;
+    setActualCompareLoading(true);
+    setActualCompareError('');
+    setActualCompareData(null);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-actual-compare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdi_id: pdiId,
+          party_id: partyId,
+          party_name: partyName || '',
+          actual_barcodes: combined
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error || 'Compare failed');
+      }
+      setActualCompareData(data);
+      return data;
+    } catch (err) {
+      setActualCompareError(err.message || 'Compare failed');
+    } finally {
+      setActualCompareLoading(false);
+    }
+  };
+
   const runActualCompare = async () => {
     if (!pdiStatusActiveId) {
       setActualCompareError('Select a PDI first');
@@ -605,38 +690,16 @@ const PartyReallocationPlanner = () => {
       setActualCompareError('Party ID missing');
       return;
     }
-
-    // Combine file-parsed barcodes + manually typed barcodes
     const manualParsed = parseSerials(manualBarcodeInput);
     const combined = Array.from(new Set([...actualBarcodes, ...manualParsed]));
-
     if (!combined.length) {
       setActualCompareError('Pehle barcodes add karo — file upload karo ya manually paste karo');
       return;
     }
-    setActualCompareLoading(true);
-    setActualCompareError('');
-    setActualCompareData(null);
-    try {
-      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-actual-compare`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          pdi_id: pdiStatusActiveId,
-          party_id: partyId,
-          party_name: detailPartyName || (parties.find((p) => p.id === partyId) || {}).companyName || '',
-          actual_barcodes: combined
-        })
-      });
-      const data = await resp.json();
-      if (!resp.ok || !data?.success) {
-        throw new Error(data?.error || 'Compare failed');
-      }
-      setActualCompareData(data);
-    } catch (err) {
-      setActualCompareError(err.message || 'Compare failed');
-    } finally {
-      setActualCompareLoading(false);
+    const partyNameForRun = detailPartyName || (parties.find((p) => p.id === partyId) || {}).companyName || '';
+    const data = await runActualCompareWith(pdiStatusActiveId, partyId, partyNameForRun, combined);
+    if (data) {
+      persistActualBarcodes(pdiStatusActiveId, partyNameForRun, combined, actualFileName);
     }
   };
 
@@ -1042,7 +1105,7 @@ const PartyReallocationPlanner = () => {
         {partyPdiListLoading && <p className="info">Loading PDIs for selected party...</p>}
         {partyPdiListError && <p className="error">{partyPdiListError}</p>}
 
-        {partyPdiList.length > 0 && (
+        {partyPdiList.length > 0 && !pdiStatusActiveId && (
           <div className="workspace-editor">
             <div className="workspace-editor-header">
               <h3>{partyPdiList[0]?.party_name || 'Selected Party'} - PDI Cards</h3>
@@ -1101,6 +1164,15 @@ const PartyReallocationPlanner = () => {
                   <p>Customer ke saath jo actually PDI hui uski barcode list yahan add karo (file upload <strong>ya</strong> manually paste karo). System batayega: kitna pack hua, kitna nahi, kis running order ka kitna bacha, aur extra/missing detail.</p>
                 </div>
               </div>
+
+              {savedBarcodesMeta && (
+                <div className="saved-barcodes-banner">
+                  💾 <strong>Saved in DB:</strong> {savedBarcodesMeta.count} barcodes
+                  {savedBarcodesMeta.filename ? ` (file: ${savedBarcodesMeta.filename})` : ''}
+                  {savedBarcodesMeta.updated_at ? ` — last updated ${String(savedBarcodesMeta.updated_at).slice(0, 19).replace('T', ' ')}` : ''}
+                  {savingBarcodes && <span className="muted"> — saving...</span>}
+                </div>
+              )}
 
               {/* Option 1: File upload */}
               <div className="actual-pdi-section-label">Option 1 — Excel / CSV File Upload</div>

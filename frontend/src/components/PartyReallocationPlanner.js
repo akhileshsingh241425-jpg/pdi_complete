@@ -507,16 +507,21 @@ const PartyReallocationPlanner = () => {
     await fetchPdiBarcodesById(pdiIdInput);
   };
 
-  // Fetch full Rays-style status for a PDI (total / packed / dispatched / pending)
+  // Fetch full Rays-style status for a PDI (bulk party-dispatch history intersection)
   const fetchPdiStatus = async (pdiIdValue) => {
     const pid = String(pdiIdValue || '').trim();
     if (!pid) return;
+    const partyId = detailPartyId || activePartyId;
+    if (!partyId) {
+      setPdiStatusError('Party ID missing');
+      return;
+    }
     setPdiStatusActiveId(pid);
     setPdiStatusLoading(true);
     setPdiStatusError('');
     setPdiStatusData(null);
     try {
-      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}`);
+      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}?party_id=${encodeURIComponent(partyId)}`);
       const data = await resp.json();
       if (!resp.ok || !data?.success) {
         throw new Error(data?.error || 'Failed to fetch PDI status');
@@ -957,7 +962,7 @@ const PartyReallocationPlanner = () => {
         {pdiStatusLoading && (
           <div className="pdi-status-loading">
             <div className="spinner" />
-            <p>Loading PDI status... yeh thoda time le sakta hai (parallel barcode tracking).</p>
+            <p>Loading PDI status... party dispatch history ek hi API call me aa rahi hai.</p>
           </div>
         )}
         {pdiStatusError && <p className="error">{pdiStatusError}</p>}
@@ -982,35 +987,21 @@ const PartyReallocationPlanner = () => {
                 <div className="status-card-value">{pdiStatusData.summary?.total_barcodes || 0}</div>
                 <div className="status-card-sub">Barcodes from MRP</div>
               </div>
-              <div className="status-card status-tracked">
-                <div className="status-card-label">Tracked</div>
-                <div className="status-card-value">{pdiStatusData.summary?.tracked || 0}</div>
-                <div className="status-card-sub">
-                  {pdiStatusData.summary?.truncated ? 'Capped at limit' : 'All barcodes'}
-                </div>
-              </div>
               <div className="status-card status-dispatched">
                 <div className="status-card-label">Dispatched</div>
                 <div className="status-card-value">{pdiStatusData.summary?.dispatched || 0}</div>
                 <div className="status-card-sub">{pdiStatusData.summary?.dispatched_percent || 0}%</div>
               </div>
-              <div className="status-card status-packed">
-                <div className="status-card-label">Packed (not dispatched)</div>
-                <div className="status-card-value">{pdiStatusData.summary?.packed || 0}</div>
-                <div className="status-card-sub">{pdiStatusData.summary?.packed_percent || 0}%</div>
-              </div>
               <div className="status-card status-pending">
-                <div className="status-card-label">Pending / Not Packed</div>
+                <div className="status-card-label">Not Dispatched</div>
                 <div className="status-card-value">{pdiStatusData.summary?.pending || 0}</div>
                 <div className="status-card-sub">{pdiStatusData.summary?.pending_percent || 0}%</div>
               </div>
-              {pdiStatusData.summary?.unknown > 0 && (
-                <div className="status-card status-unknown">
-                  <div className="status-card-label">Unknown / Error</div>
-                  <div className="status-card-value">{pdiStatusData.summary?.unknown}</div>
-                  <div className="status-card-sub">API error</div>
-                </div>
-              )}
+              <div className="status-card status-tracked">
+                <div className="status-card-label">Party Universe</div>
+                <div className="status-card-value">{pdiStatusData.summary?.party_dispatch_universe || 0}</div>
+                <div className="status-card-sub">All dispatched barcodes of this party</div>
+              </div>
             </div>
 
             <div className="status-progress">
@@ -1018,11 +1009,6 @@ const PartyReallocationPlanner = () => {
                 className="status-progress-fill dispatched"
                 style={{ width: `${pdiStatusData.summary?.dispatched_percent || 0}%` }}
                 title={`Dispatched ${pdiStatusData.summary?.dispatched_percent || 0}%`}
-              />
-              <div
-                className="status-progress-fill packed"
-                style={{ width: `${pdiStatusData.summary?.packed_percent || 0}%` }}
-                title={`Packed ${pdiStatusData.summary?.packed_percent || 0}%`}
               />
               <div
                 className="status-progress-fill pending"
@@ -1033,21 +1019,22 @@ const PartyReallocationPlanner = () => {
 
             <div className="status-tables">
               <div className="status-table-block">
-                <h4>Recent Dispatched ({pdiStatusData.recent_dispatched?.length || 0})</h4>
+                <h4>Dispatch Vehicles ({(pdiStatusData.dispatch_groups || []).length})</h4>
                 <div className="status-table-scroll">
                   <table>
-                    <thead><tr><th>Serial</th><th>Date</th><th>Vehicle</th><th>Invoice</th></tr></thead>
+                    <thead><tr><th>Vehicle</th><th>Date</th><th>Invoice</th><th>Modules</th><th>Pallets</th></tr></thead>
                     <tbody>
-                      {(pdiStatusData.recent_dispatched || []).map((r) => (
-                        <tr key={`d-${r.serial}`}>
-                          <td>{r.serial}</td>
-                          <td>{r.dispatch_date || '-'}</td>
-                          <td>{r.vehicle_no || '-'}</td>
-                          <td>{r.invoice_no || '-'}</td>
+                      {(pdiStatusData.dispatch_groups || []).map((g) => (
+                        <tr key={`v-${g.vehicle_no}-${g.dispatch_date}`}>
+                          <td>{g.vehicle_no}</td>
+                          <td>{g.dispatch_date || '-'}</td>
+                          <td>{g.invoice_no || '-'}</td>
+                          <td>{g.module_count}</td>
+                          <td>{g.pallet_count}</td>
                         </tr>
                       ))}
-                      {!(pdiStatusData.recent_dispatched || []).length && (
-                        <tr><td colSpan={4} className="empty">No dispatch yet</td></tr>
+                      {!(pdiStatusData.dispatch_groups || []).length && (
+                        <tr><td colSpan={5} className="empty">No dispatch yet</td></tr>
                       )}
                     </tbody>
                   </table>
@@ -1055,21 +1042,21 @@ const PartyReallocationPlanner = () => {
               </div>
 
               <div className="status-table-block">
-                <h4>Recent Packed ({pdiStatusData.recent_packed?.length || 0})</h4>
+                <h4>Pallets ({(pdiStatusData.pallet_groups || []).length})</h4>
                 <div className="status-table-scroll">
                   <table>
-                    <thead><tr><th>Serial</th><th>Pack Date</th><th>Box</th><th>Pallet</th></tr></thead>
+                    <thead><tr><th>Pallet</th><th>Vehicle</th><th>Date</th><th>Modules</th></tr></thead>
                     <tbody>
-                      {(pdiStatusData.recent_packed || []).map((r) => (
-                        <tr key={`p-${r.serial}`}>
-                          <td>{r.serial}</td>
-                          <td>{r.packing_date || '-'}</td>
-                          <td>{r.box_no || '-'}</td>
-                          <td>{r.pallet_no || '-'}</td>
+                      {(pdiStatusData.pallet_groups || []).map((p) => (
+                        <tr key={`p-${p.pallet_no}`}>
+                          <td>{p.pallet_no}</td>
+                          <td>{p.vehicle_no || '-'}</td>
+                          <td>{p.dispatch_date || '-'}</td>
+                          <td>{p.module_count}</td>
                         </tr>
                       ))}
-                      {!(pdiStatusData.recent_packed || []).length && (
-                        <tr><td colSpan={4} className="empty">Nothing packed yet</td></tr>
+                      {!(pdiStatusData.pallet_groups || []).length && (
+                        <tr><td colSpan={4} className="empty">No pallet info</td></tr>
                       )}
                     </tbody>
                   </table>

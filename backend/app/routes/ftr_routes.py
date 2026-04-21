@@ -3148,52 +3148,44 @@ def pdi_actual_compare():
         actual_dispatched = actual_set & set(mrp_lookup.keys())
         actual_not_dispatched = actual_set - actual_dispatched
 
-        # 5. Packed check (per-barcode) for actual_not_dispatched, capped
-        PACK_CAP = int(request.args.get('pack_cap', 3000))
-        to_check = list(actual_not_dispatched)[:PACK_CAP]
-        skipped = max(0, len(actual_not_dispatched) - PACK_CAP)
-
-        packed_info = {}
+        # 5. Packed check — BULK approach: call get_barcode_tracking.php with party_name ONCE
+        #    This returns ALL packed barcodes for the party — no cap, no per-barcode loops.
+        packed_info = {}   # serial -> {pallet_no, running_order, packed_party}
         packed_set = set()
         pending_set = set()
 
-        def _pack(serial):
+        bulk_packed_lookup = {}   # serial -> info, from bulk party call
+
+        if party_name:
             try:
-                r = http_requests.post(
+                bulk_resp = http_requests.post(
                     'https://umanmrp.in/api/get_barcode_tracking.php',
-                    data={'barcode': serial}, timeout=8
+                    json={'party_name': party_name},
+                    timeout=120
                 )
-                if r.status_code != 200:
-                    return ('unknown', serial, None)
-                d = r.json()
-                if not d.get('success') or not d.get('data'):
-                    return ('pending', serial, None)
-                pack = (d['data'] or {}).get('packing') or {}
-                if pack.get('packing_date'):
-                    return ('packed', serial, {
-                        'packing_date': pack.get('packing_date'),
-                        'box_no': pack.get('box_no', ''),
-                        'pallet_no': pack.get('pallet_no', ''),
-                        'running_order': pack.get('running_order', '') or pack.get('ro_no', '') or '',
-                        'packed_party': pack.get('party_name', '') or pack.get('packed_party', '') or pack.get('customer_name', '') or ''
-                    })
-                return ('pending', serial, None)
-            except Exception:
-                return ('unknown', serial, None)
+                if bulk_resp.status_code == 200:
+                    bulk_data = bulk_resp.json()
+                    items = bulk_data.get('data') or []
+                    for item in items:
+                        bc = str(item.get('barcode', '') or '').strip().upper()
+                        if bc:
+                            bulk_packed_lookup[bc] = {
+                                'pallet_no': item.get('pallet_no', ''),
+                                'running_order': item.get('running_order', '') or item.get('ro_no', '') or '',
+                                'packed_party': item.get('packed_party', '') or item.get('party_name', '') or party_name,
+                                'packing_date': item.get('packing_date', ''),
+                                'box_no': item.get('box_no', '')
+                            }
+            except Exception as e:
+                print(f"[pdi_actual_compare] Bulk pack fetch error: {e}")
 
-        if to_check:
-            with ThreadPoolExecutor(max_workers=30) as ex:
-                for f in as_completed([ex.submit(_pack, s) for s in to_check]):
-                    status, serial, info = f.result()
-                    if status == 'packed':
-                        packed_set.add(serial)
-                        packed_info[serial] = info or {}
-                    elif status == 'pending':
-                        pending_set.add(serial)
-
-        # Everything beyond cap treated as pending
-        if skipped:
-            pending_set.update(list(actual_not_dispatched)[PACK_CAP:])
+        # Intersect actual_not_dispatched with bulk_packed_lookup
+        for s in actual_not_dispatched:
+            if s in bulk_packed_lookup:
+                packed_set.add(s)
+                packed_info[s] = bulk_packed_lookup[s]
+            else:
+                pending_set.add(s)
 
         try:
             planned_wattage = float(pdi_detail_map.get(pdi_id, {}).get('wattage') or 0)

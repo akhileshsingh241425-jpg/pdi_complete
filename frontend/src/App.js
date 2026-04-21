@@ -318,8 +318,17 @@ function App() {
     const authStatus = localStorage.getItem('isAuthenticated');
     if (authStatus === 'true') {
       setIsAuthenticated(true);
-      // Set default section based on role
-      setActiveSection(getDefaultSection());
+      const params = new URLSearchParams(window.location.search);
+      const requestedSection = params.get('section');
+      const access = roleAccess[userRole] || ['all'];
+      const canAccessRequested = requestedSection && (access.includes('all') || access.includes(requestedSection));
+      const defaultSection = getDefaultSection();
+
+      if (canAccessRequested) {
+        setActiveSection(requestedSection);
+      } else {
+        setActiveSection(defaultSection);
+      }
     }
     
     // Handle window resize for mobile detection
@@ -333,6 +342,7 @@ function App() {
     
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogin = () => {

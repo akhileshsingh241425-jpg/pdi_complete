@@ -3104,22 +3104,25 @@ def delete_actual_pdi_barcodes(pdi_id):
 # ---------------------------------------------------------------------------
 
 def _ensure_actual_pdi_batches_table(cursor):
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS actual_pdi_batches (
-            id              INT AUTO_INCREMENT PRIMARY KEY,
-            party_id        VARCHAR(64) NOT NULL,
-            party_name      VARCHAR(255) DEFAULT NULL,
-            batch_no        INT NOT NULL,
-            batch_name      VARCHAR(255) DEFAULT NULL,
-            filename        VARCHAR(255) DEFAULT NULL,
-            barcode_count   INT DEFAULT 0,
-            barcodes_json   LONGTEXT,
-            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY uniq_party_batch (party_id, batch_no),
-            KEY idx_party (party_id)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
-    """)
+    try:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS actual_pdi_batches (
+                id              INT AUTO_INCREMENT PRIMARY KEY,
+                party_id        VARCHAR(64) NOT NULL,
+                party_name      VARCHAR(255) DEFAULT NULL,
+                batch_no        INT NOT NULL,
+                batch_name      VARCHAR(255) DEFAULT NULL,
+                filename        VARCHAR(255) DEFAULT NULL,
+                barcode_count   INT DEFAULT 0,
+                barcodes_json   LONGTEXT,
+                created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+                updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                UNIQUE KEY uniq_party_batch (party_id, batch_no)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """)
+    except Exception as ce:
+        print(f"[_ensure_actual_pdi_batches_table] CREATE failed: {ce}")
+        raise
 
 
 @ftr_bp.route('/actual-pdi-batches/<party_id>', methods=['GET'])
@@ -3156,6 +3159,7 @@ def list_actual_pdi_batches(party_id):
             })
         return jsonify({"success": True, "batches": batches})
     except Exception as e:
+        import traceback; traceback.print_exc()
         print(f"[list_actual_pdi_batches] error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -3198,6 +3202,7 @@ def create_actual_pdi_batch(party_id):
         conn.close()
         return jsonify({"success": True, "id": new_id, "batch_no": next_no, "batch_name": batch_name, "count": len(cleaned)})
     except Exception as e:
+        import traceback; traceback.print_exc()
         print(f"[create_actual_pdi_batch] error: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 

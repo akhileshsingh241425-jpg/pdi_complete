@@ -901,6 +901,90 @@ const PartyReallocationPlanner = () => {
     URL.revokeObjectURL(url);
   };
 
+  // Single-button complete Excel report for a PDI card (multi-sheet).
+  // Sheets: Summary, Dispatched, Packed, Not Packed (Pending)
+  const downloadCompleteCardReport = () => {
+    if (!pdiStatusData) return;
+    const pdi = pdiStatusData.pdi || {};
+    const sum = pdiStatusData.summary || {};
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Summary
+    const summaryRows = [
+      ['PDI Card Report'],
+      [],
+      ['PDI Name', pdi.name || ''],
+      ['PDI ID', pdi.id || ''],
+      ['Wattage', pdi.wattage || ''],
+      ['Plan Quantity', pdi.quantity || 0],
+      ['Total kW', pdi.total_kw || 0],
+      ['Generated At', new Date().toLocaleString()],
+      [],
+      ['Metric', 'Count', '%'],
+      ['Total Produced (MRP)', sum.total_barcodes || 0, '100%'],
+      ['Dispatched', sum.dispatched || 0, `${sum.dispatched_percent || 0}%`],
+      ['Packed (not dispatched)', sum.packed || 0, `${sum.packed_percent || 0}%`],
+      ['Not Packed (Pending)', sum.pending || 0, `${sum.pending_percent || 0}%`]
+    ];
+    const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+    ws1['!cols'] = [{ wch: 28 }, { wch: 18 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(wb, ws1, 'Summary');
+
+    // Sheet 2: Dispatched (with vehicle/date/invoice if available)
+    const dispatchedSerials = pdiStatusData.all_dispatched || [];
+    const dispMap = {};
+    (pdiStatusData.dispatch_groups || []).forEach((g) => {
+      (g.serials || []).forEach((s) => {
+        dispMap[s] = {
+          vehicle: g.vehicle_no || '',
+          date: g.dispatch_date || '',
+          invoice: g.invoice_no || '',
+          dispatch_party: g.dispatch_party || ''
+        };
+      });
+    });
+    const dispRows = [['Serial Number', 'Vehicle No', 'Dispatch Date', 'Invoice No', 'Dispatch Party']];
+    dispatchedSerials.forEach((s) => {
+      const m = dispMap[s] || {};
+      dispRows.push([s, m.vehicle || '', m.date || '', m.invoice || '', m.dispatch_party || '']);
+    });
+    const ws2 = XLSX.utils.aoa_to_sheet(dispRows);
+    ws2['!cols'] = [{ wch: 22 }, { wch: 14 }, { wch: 14 }, { wch: 22 }, { wch: 24 }];
+    XLSX.utils.book_append_sheet(wb, ws2, `Dispatched (${dispatchedSerials.length})`);
+
+    // Sheet 3: Packed (with pallet info if available)
+    const packedSerials = pdiStatusData.all_packed || [];
+    const packMap = {};
+    (pdiStatusData.pallet_groups || pdiStatusData.packed_groups || []).forEach((g) => {
+      (g.serials || []).forEach((s) => {
+        packMap[s] = {
+          pallet: g.pallet_no || '',
+          vehicle: g.vehicle_no || '',
+          date: g.packing_date || g.dispatch_date || ''
+        };
+      });
+    });
+    const packRows = [['Serial Number', 'Pallet No', 'Vehicle No', 'Date']];
+    packedSerials.forEach((s) => {
+      const m = packMap[s] || {};
+      packRows.push([s, m.pallet || '', m.vehicle || '', m.date || '']);
+    });
+    const ws3 = XLSX.utils.aoa_to_sheet(packRows);
+    ws3['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, ws3, `Packed (${packedSerials.length})`);
+
+    // Sheet 4: Not Packed (Pending)
+    const pendingSerials = pdiStatusData.all_pending || [];
+    const pendRows = [['Serial Number']];
+    pendingSerials.forEach((s) => pendRows.push([s]));
+    const ws4 = XLSX.utils.aoa_to_sheet(pendRows);
+    ws4['!cols'] = [{ wch: 22 }];
+    XLSX.utils.book_append_sheet(wb, ws4, `Not Packed (${pendingSerials.length})`);
+
+    const fname = `PDI-${pdi.id || 'report'}-${(pdi.name || '').replace(/[^A-Za-z0-9_-]+/g, '_')}-${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, fname);
+  };
+
   const downloadPdiBarcodesCsv = () => {
     if (!pdiLookupData || !pdiLookupData.barcodes.length) return;
     const header = 'barcode\n';
@@ -1406,9 +1490,17 @@ const PartyReallocationPlanner = () => {
                 value={statusSearch}
                 onChange={(e) => setStatusSearch(e.target.value)}
               />
-              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-dispatched`, pdiStatusData.all_dispatched)}>Download Dispatched CSV</button>
-              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-packed`, pdiStatusData.all_packed)}>Download Packed CSV</button>
-              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-pending`, pdiStatusData.all_pending)}>Download Pending CSV</button>
+              <button
+                type="button"
+                className="primary"
+                onClick={downloadCompleteCardReport}
+                title="Single Excel file with Summary, Dispatched, Packed, Not Packed sheets"
+              >
+                📊 Download Complete Report (Excel)
+              </button>
+              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-dispatched`, pdiStatusData.all_dispatched)}>Dispatched CSV</button>
+              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-packed`, pdiStatusData.all_packed)}>Packed CSV</button>
+              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-pending`, pdiStatusData.all_pending)}>Pending CSV</button>
             </div>
 
             <div className="status-tables">

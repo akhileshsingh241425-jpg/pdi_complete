@@ -392,7 +392,7 @@ const PartyReallocationPlanner = () => {
     setPdiLookupData(null);
 
     try {
-      const resp = await fetch('https://umanmrp.in/get/get_all_pdi.php', {
+      const resp = await fetch(`${API_BASE_URL}/ftr/mrp-party-pdis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ party_name_id: partyNameId })
@@ -413,12 +413,14 @@ const PartyReallocationPlanner = () => {
     }
   };
 
+  // Auto-load PDIs only when this tab was opened with ?partyId=... (detail mode)
   useEffect(() => {
-    if (!parties.length) return;
-    if (partyNameIdInput) return;
-    fetchAllPdisForParty(parties[0].id);
+    if (!isPartyDetailMode) return;
+    if (!activePartyId) return;
+    if (partyNameIdInput === activePartyId) return;
+    fetchAllPdisForParty(activePartyId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parties, partyNameIdInput]);
+  }, [isPartyDetailMode, activePartyId]);
 
   const fetchPdiBarcodesById = async (pdiIdValue) => {
     const pdiId = String(pdiIdValue || '').trim();
@@ -431,7 +433,7 @@ const PartyReallocationPlanner = () => {
     setPdiLookupError('');
     setPdiLookupData(null);
     try {
-      const resp = await fetch('https://mrp.umanerp.com/get/get_pdi_barcodes.php', {
+      const resp = await fetch(`${API_BASE_URL}/ftr/mrp-pdi-barcodes`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pdi_id: pdiId })
@@ -794,34 +796,59 @@ const PartyReallocationPlanner = () => {
           <small>Source: umanmrp.in/get_all_pdi.php + mrp.umanerp.com/get_pdi_barcodes.php</small>
         </div>
 
-        <div className="workspace-editor-grid">
-          <div className="workspace-field">
-            <label>Search Party</label>
-            <input
-              type="text"
-              value={partyCardSearch}
-              onChange={(e) => setPartyCardSearch(e.target.value)}
-              placeholder="Search by party name"
-            />
+        {!isPartyDetailMode && (
+          <div className="workspace-editor-grid">
+            <div className="workspace-field">
+              <label>Search Party</label>
+              <input
+                type="text"
+                value={partyCardSearch}
+                onChange={(e) => setPartyCardSearch(e.target.value)}
+                placeholder="Search by party name"
+              />
+            </div>
           </div>
-        </div>
+        )}
 
-        {loadingParties && <p className="info">Loading parties...</p>}
+        {loadingParties && !isPartyDetailMode && <p className="info">Loading parties...</p>}
         {error && <p className="error">{error}</p>}
 
-        <div className="party-cards-grid">
-          {partyCardsFiltered.map((party) => (
-            <button
-              type="button"
-              key={`party-auto-${party.id}`}
-              className={`party-card-btn ${String(partyNameIdInput || '') === String(party.id) ? 'active' : ''}`}
-              onClick={() => fetchAllPdisForParty(party.id)}
-            >
-              <h4>{party.companyName}</h4>
-              <p>Party ID: {party.id}</p>
-            </button>
-          ))}
-        </div>
+        {!isPartyDetailMode && (
+          <div className="party-cards-grid">
+            {partyCardsFiltered.map((party) => {
+              const detailUrl = `${window.location.pathname}?section=party-reallocation&partyId=${encodeURIComponent(party.id)}&companyName=${encodeURIComponent(party.companyName || '')}`;
+              return (
+                <a
+                  key={`party-auto-${party.id}`}
+                  className="party-card-btn"
+                  href={detailUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <h4>{party.companyName}</h4>
+                  <p>Party ID: {party.id}</p>
+                  <p style={{ fontSize: 11, opacity: 0.7 }}>Click to open in new tab</p>
+                </a>
+              );
+            })}
+            {!partyCardsFiltered.length && !loadingParties && (
+              <p className="info">No parties match your search.</p>
+            )}
+          </div>
+        )}
+
+        {isPartyDetailMode && activeParty && (
+          <div className="workspace-editor-header">
+            <h3>{activeParty.companyName}</h3>
+            <p><strong>Party ID:</strong> {activeParty.id}</p>
+          </div>
+        )}
+        {isPartyDetailMode && !activeParty && activePartyId && (
+          <div className="workspace-editor-header">
+            <h3>{decodeURIComponent(new URLSearchParams(window.location.search).get('companyName') || 'Selected Party')}</h3>
+            <p><strong>Party ID:</strong> {activePartyId}</p>
+          </div>
+        )}
 
         {partyPdiListLoading && <p className="info">Loading PDIs for selected party...</p>}
         {partyPdiListError && <p className="error">{partyPdiListError}</p>}

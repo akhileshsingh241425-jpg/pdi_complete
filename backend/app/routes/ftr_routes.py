@@ -2603,6 +2603,87 @@ def get_sales_parties():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ============================================================
+# MRP PROXY ENDPOINTS (avoid browser CORS)
+# ============================================================
+
+@ftr_bp.route('/mrp-party-pdis', methods=['POST', 'GET'])
+def mrp_party_pdis():
+    """Proxy for https://umanmrp.in/get/get_all_pdi.php
+
+    Body / query: { party_name_id: '<uuid>' }
+    Returns the upstream JSON as-is on success.
+    """
+    try:
+        if request.method == 'POST':
+            payload = request.get_json(silent=True) or {}
+            party_name_id = (payload.get('party_name_id') or '').strip()
+        else:
+            party_name_id = (request.args.get('party_name_id') or '').strip()
+
+        if not party_name_id:
+            return jsonify({"status": "error", "message": "party_name_id is required"}), 400
+
+        resp = http_requests.post(
+            'https://umanmrp.in/get/get_all_pdi.php',
+            json={"party_name_id": party_name_id},
+            timeout=60
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return jsonify({
+                "status": "error",
+                "message": f"Upstream returned non-JSON (HTTP {resp.status_code})",
+                "detail": resp.text[:300]
+            }), 502
+        return jsonify(data), resp.status_code
+    except http_requests.exceptions.Timeout:
+        return jsonify({"status": "error", "message": "Upstream timeout"}), 504
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
+@ftr_bp.route('/mrp-pdi-barcodes', methods=['POST', 'GET'])
+def mrp_pdi_barcodes():
+    """Proxy for https://mrp.umanerp.com/get/get_pdi_barcodes.php
+
+    Body / query: { pdi_id: '<id>' }
+    """
+    try:
+        if request.method == 'POST':
+            payload = request.get_json(silent=True) or {}
+            pdi_id = str(payload.get('pdi_id') or '').strip()
+        else:
+            pdi_id = str(request.args.get('pdi_id') or '').strip()
+
+        if not pdi_id:
+            return jsonify({"status": "error", "message": "pdi_id is required"}), 400
+
+        resp = http_requests.post(
+            'https://mrp.umanerp.com/get/get_pdi_barcodes.php',
+            json={"pdi_id": pdi_id},
+            timeout=120
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            return jsonify({
+                "status": "error",
+                "message": f"Upstream returned non-JSON (HTTP {resp.status_code})",
+                "detail": resp.text[:300]
+            }), 502
+        return jsonify(data), resp.status_code
+    except http_requests.exceptions.Timeout:
+        return jsonify({"status": "error", "message": "Upstream timeout"}), 504
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+
 @ftr_bp.route('/dispatch-by-party/<party_id>', methods=['GET'])
 def get_dispatch_by_party(party_id):
     """

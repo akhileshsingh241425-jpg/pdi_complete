@@ -5,10 +5,18 @@ const API_BASE_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:5003/api'
   : '/api';
 
+const filterBySearch = (parties, term) => {
+  const query = (term || '').trim().toLowerCase();
+  if (!query) return parties;
+  return parties.filter((p) => (p.companyName || '').toLowerCase().includes(query));
+};
+
 const PartyReallocationPlanner = () => {
   const [parties, setParties] = useState([]);
-  const [packedPartyId, setPackedPartyId] = useState('');
-  const [dispatchPartyId, setDispatchPartyId] = useState('');
+  const [packedPartyIds, setPackedPartyIds] = useState([]);
+  const [dispatchPartyIds, setDispatchPartyIds] = useState([]);
+  const [packedSearch, setPackedSearch] = useState('');
+  const [dispatchSearch, setDispatchSearch] = useState('');
   const [loadingParties, setLoadingParties] = useState(false);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [analysis, setAnalysis] = useState(null);
@@ -37,19 +45,40 @@ const PartyReallocationPlanner = () => {
     loadParties();
   }, []);
 
-  const packedParty = useMemo(
-    () => parties.find((p) => String(p.id) === String(packedPartyId)),
-    [parties, packedPartyId]
-  );
+  const packedFiltered = useMemo(() => filterBySearch(parties, packedSearch), [parties, packedSearch]);
+  const dispatchFiltered = useMemo(() => filterBySearch(parties, dispatchSearch), [parties, dispatchSearch]);
 
-  const dispatchParty = useMemo(
-    () => parties.find((p) => String(p.id) === String(dispatchPartyId)),
-    [parties, dispatchPartyId]
-  );
+  const togglePacked = (id) => {
+    setPackedPartyIds((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  };
+
+  const toggleDispatch = (id) => {
+    setDispatchPartyIds((prev) => (
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    ));
+  };
+
+  const selectAllPackedFiltered = () => {
+    setPackedPartyIds((prev) => {
+      const next = new Set(prev);
+      packedFiltered.forEach((p) => next.add(p.id));
+      return Array.from(next);
+    });
+  };
+
+  const selectAllDispatchFiltered = () => {
+    setDispatchPartyIds((prev) => {
+      const next = new Set(prev);
+      dispatchFiltered.forEach((p) => next.add(p.id));
+      return Array.from(next);
+    });
+  };
 
   const runAnalysis = async () => {
-    if (!packedPartyId || !dispatchPartyId) {
-      setError('Please select both packed party and dispatch party.');
+    if (packedPartyIds.length === 0 || dispatchPartyIds.length === 0) {
+      setError('Please select at least one packed party and one dispatch party.');
       return;
     }
 
@@ -58,38 +87,64 @@ const PartyReallocationPlanner = () => {
     setAnalysis(null);
 
     try {
-      const packedUrl = `${API_BASE_URL}/ftr/packing-count-by-party/${packedPartyId}`;
-      const dispatchUrl = `${API_BASE_URL}/ftr/dispatch-by-party/${dispatchPartyId}?name=${encodeURIComponent(dispatchParty?.companyName || '')}`;
+      const packedSelections = parties.filter((p) => packedPartyIds.includes(p.id));
+      const dispatchSelections = parties.filter((p) => dispatchPartyIds.includes(p.id));
 
-      const [packedResp, dispatchResp] = await Promise.all([
-        fetch(packedUrl),
-        fetch(dispatchUrl)
-      ]);
+      const packedSummaries = await Promise.all(
+        packedSelections.map(async (party) => {
+          const resp = await fetch(`${API_BASE_URL}/ftr/packing-count-by-party/${party.id}`);
+          const data = await resp.json();
+          if (!data.success) {
+            throw new Error(data.error || `Unable to fetch packing count for ${party.companyName}`);
+          }
+          return {
+            partyId: party.id,
+            partyName: party.companyName,
+            packingCount: Number(data.packing_count || 0)
+          };
+        })
+      );
 
-      const packedData = await packedResp.json();
-      const dispatchData = await dispatchResp.json();
+      const dispatchSummaries = await Promise.all(
+        dispatchSelections.map(async (party) => {
+          const resp = await fetch(
+            `${API_BASE_URL}/ftr/dispatch-by-party/${party.id}?name=${encodeURIComponent(party.companyName || '')}`
+          );
+          const data = await resp.json();
+          if (!data.success) {
+            throw new Error(data.error || `Unable to fetch dispatch data for ${party.companyName}`);
+          }
+          return {
+            partyId: party.id,
+            partyName: party.companyName,
+            dispatchCount: Number(data?.summary?.dispatched || 0),
+            vehicleGroups: (data.dispatch_groups || []).length,
+            palletGroups: (data.pallet_groups || []).length
+          };
+        })
+      );
 
-      if (!packedData.success) {
-        throw new Error(packedData.error || 'Unable to fetch packed-party count');
-      }
-      if (!dispatchData.success) {
-        throw new Error(dispatchData.error || 'Unable to fetch dispatch-party data');
-      }
-
-      const packedCount = Number(packedData.packing_count || 0);
-      const dispatchCount = Number(dispatchData?.summary?.dispatched || 0);
-      const feasibility = packedCount > 0 ? 'Possible' : 'No packed modules found for selected packed party';
+      const rows = [];
+      packedSummaries.forEach((packed) => {
+        dispatchSummaries.forEach((dispatch) => {
+          rows.push({
+            packedPartyName: packed.partyName,
+            packedPartyId: packed.partyId,
+            packedCount: packed.packingCount,
+            dispatchPartyName: dispatch.partyName,
+            dispatchPartyId: dispatch.partyId,
+            dispatchCount: dispatch.dispatchCount,
+            status: packed.packingCount > 0 ? 'Possible' : 'No packed modules found'
+          });
+        });
+      });
 
       setAnalysis({
-        packedPartyName: packedData.party_name,
-        packedPartyId: packedData.party_id,
-        packedCount,
-        dispatchPartyName: dispatchParty?.companyName || dispatchData.company_name || dispatchPartyId,
-        dispatchPartyId,
-        dispatchCount,
-        feasibility,
-        dispatchGroups: dispatchData.dispatch_groups || [],
-        palletGroups: dispatchData.pallet_groups || []
+        packedSummaries,
+        dispatchSummaries,
+        rows,
+        totalPackedCount: packedSummaries.reduce((sum, x) => sum + x.packingCount, 0),
+        totalDispatchedCount: dispatchSummaries.reduce((sum, x) => sum + x.dispatchCount, 0)
       });
     } catch (err) {
       setError(err.message || 'Analysis failed');
@@ -111,37 +166,63 @@ const PartyReallocationPlanner = () => {
       <div className="planner-card">
         <div className="planner-grid">
           <div className="planner-field">
-            <label htmlFor="packed-party">Packed Under Party</label>
-            <select
-              id="packed-party"
-              value={packedPartyId}
-              onChange={(e) => setPackedPartyId(e.target.value)}
+            <label>Packed Under Party (Search + Checkbox Multi-select)</label>
+            <input
+              type="text"
+              placeholder="Search packed parties..."
+              value={packedSearch}
+              onChange={(e) => setPackedSearch(e.target.value)}
               disabled={loadingParties || loadingAnalysis}
-            >
-              <option value="">-- Select Packed Party --</option>
-              {parties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.companyName}
-                </option>
+              className="party-search"
+            />
+            <div className="mini-actions">
+              <button type="button" onClick={selectAllPackedFiltered} disabled={loadingParties || loadingAnalysis}>Select Filtered</button>
+              <button type="button" onClick={() => setPackedPartyIds([])} disabled={loadingParties || loadingAnalysis}>Clear</button>
+              <span>{packedPartyIds.length} selected</span>
+            </div>
+            <div className="checkbox-list">
+              {packedFiltered.map((p) => (
+                <label key={p.id} className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={packedPartyIds.includes(p.id)}
+                    onChange={() => togglePacked(p.id)}
+                    disabled={loadingParties || loadingAnalysis}
+                  />
+                  <span>{p.companyName}</span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
 
           <div className="planner-field">
-            <label htmlFor="dispatch-party">Dispatch To Party</label>
-            <select
-              id="dispatch-party"
-              value={dispatchPartyId}
-              onChange={(e) => setDispatchPartyId(e.target.value)}
+            <label>Dispatch To Party (Search + Checkbox Multi-select)</label>
+            <input
+              type="text"
+              placeholder="Search dispatch parties..."
+              value={dispatchSearch}
+              onChange={(e) => setDispatchSearch(e.target.value)}
               disabled={loadingParties || loadingAnalysis}
-            >
-              <option value="">-- Select Dispatch Party --</option>
-              {parties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.companyName}
-                </option>
+              className="party-search"
+            />
+            <div className="mini-actions">
+              <button type="button" onClick={selectAllDispatchFiltered} disabled={loadingParties || loadingAnalysis}>Select Filtered</button>
+              <button type="button" onClick={() => setDispatchPartyIds([])} disabled={loadingParties || loadingAnalysis}>Clear</button>
+              <span>{dispatchPartyIds.length} selected</span>
+            </div>
+            <div className="checkbox-list">
+              {dispatchFiltered.map((p) => (
+                <label key={p.id} className="checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={dispatchPartyIds.includes(p.id)}
+                    onChange={() => toggleDispatch(p.id)}
+                    disabled={loadingParties || loadingAnalysis}
+                  />
+                  <span>{p.companyName}</span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
         </div>
 
@@ -161,28 +242,55 @@ const PartyReallocationPlanner = () => {
       </div>
 
       {analysis && (
+        <>
         <div className="planner-results">
           <div className="result-card">
-            <h3>Packed Party</h3>
-            <p><strong>Name:</strong> {analysis.packedPartyName}</p>
-            <p><strong>Party ID:</strong> {analysis.packedPartyId}</p>
-            <p><strong>Packing Count:</strong> {analysis.packedCount.toLocaleString()}</p>
+            <h3>Packed Parties</h3>
+            <p><strong>Selected:</strong> {analysis.packedSummaries.length}</p>
+            <p><strong>Total Packing Count:</strong> {analysis.totalPackedCount.toLocaleString()}</p>
           </div>
 
           <div className="result-card">
-            <h3>Dispatch Party</h3>
-            <p><strong>Name:</strong> {analysis.dispatchPartyName}</p>
-            <p><strong>Party ID:</strong> {analysis.dispatchPartyId}</p>
-            <p><strong>Already Dispatched:</strong> {analysis.dispatchCount.toLocaleString()}</p>
+            <h3>Dispatch Parties</h3>
+            <p><strong>Selected:</strong> {analysis.dispatchSummaries.length}</p>
+            <p><strong>Total Already Dispatched:</strong> {analysis.totalDispatchedCount.toLocaleString()}</p>
           </div>
 
           <div className="result-card highlight">
             <h3>Decision Support</h3>
-            <p><strong>Status:</strong> {analysis.feasibility}</p>
-            <p><strong>Vehicle/Invoice Groups:</strong> {analysis.dispatchGroups.length}</p>
-            <p><strong>Pallet Groups:</strong> {analysis.palletGroups.length}</p>
+            <p><strong>Comparison Rows:</strong> {analysis.rows.length}</p>
+            <p><strong>Status Rule:</strong> Possible if packed count &gt; 0</p>
+            <p><strong>Mode:</strong> Multi-party matrix</p>
           </div>
         </div>
+
+        <div className="result-table-wrap">
+          <table className="result-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Packed Party</th>
+                <th>Packed Count</th>
+                <th>Dispatch Party</th>
+                <th>Already Dispatched</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {analysis.rows.map((row, idx) => (
+                <tr key={`${row.packedPartyId}-${row.dispatchPartyId}`}>
+                  <td>{idx + 1}</td>
+                  <td>{row.packedPartyName}</td>
+                  <td>{row.packedCount.toLocaleString()}</td>
+                  <td>{row.dispatchPartyName}</td>
+                  <td>{row.dispatchCount.toLocaleString()}</td>
+                  <td>{row.status}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        </>
       )}
     </div>
   );

@@ -377,16 +377,19 @@ const PartyReallocationPlanner = () => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  const fetchAllPdisForParty = async () => {
-    const partyNameId = (partyNameIdInput || '').trim();
+  const fetchAllPdisForParty = async (partyNameIdValue = partyNameIdInput) => {
+    const partyNameId = String(partyNameIdValue || '').trim();
     if (!partyNameId) {
-      setPartyPdiListError('Please enter party_name_id');
+      setPartyPdiListError('party_name_id missing');
       return;
     }
 
+    setPartyNameIdInput(partyNameId);
     setPartyPdiListLoading(true);
     setPartyPdiListError('');
     setPartyPdiList([]);
+    setPdiLookupError('');
+    setPdiLookupData(null);
 
     try {
       const resp = await fetch('https://umanmrp.in/get/get_all_pdi.php', {
@@ -409,6 +412,13 @@ const PartyReallocationPlanner = () => {
       setPartyPdiListLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!parties.length) return;
+    if (partyNameIdInput) return;
+    fetchAllPdisForParty(parties[0].id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [parties, partyNameIdInput]);
 
   const fetchPdiBarcodesById = async (pdiIdValue) => {
     const pdiId = String(pdiIdValue || '').trim();
@@ -778,109 +788,42 @@ const PartyReallocationPlanner = () => {
         </p>
       </div>
 
-      <div className="planner-card">
-        <div className="planner-grid">
-          <div className="planner-field">
-            <label>Packed Under Party (Validated Packing Parties Only)</label>
-            <input
-              type="text"
-              placeholder="Search packed parties..."
-              value={packedSearch}
-              onChange={(e) => setPackedSearch(e.target.value)}
-              disabled={loadingParties || loadingAnalysis}
-              className="party-search"
-            />
-            <div className="mini-actions">
-              <button type="button" onClick={selectAllPackedFiltered} disabled={loadingParties || loadingAnalysis}>Select Filtered</button>
-              <button type="button" onClick={() => setPackedPartyIds([])} disabled={loadingParties || loadingAnalysis}>Clear</button>
-              <span>{packedPartyIds.length} selected</span>
-            </div>
-            <div className="checkbox-list">
-              {packedFiltered.map((p) => (
-                <label key={p.id} className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={packedPartyIds.includes(p.id)}
-                    onChange={() => togglePacked(p.id)}
-                    disabled={loadingParties || loadingAnalysis}
-                  />
-                  <span>{p.companyName}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          <div className="planner-field">
-            <label>Dispatch To Party (Search + Checkbox Multi-select)</label>
-            <input
-              type="text"
-              placeholder="Search dispatch parties..."
-              value={dispatchSearch}
-              onChange={(e) => setDispatchSearch(e.target.value)}
-              disabled={loadingParties || loadingAnalysis}
-              className="party-search"
-            />
-            <div className="mini-actions">
-              <button type="button" onClick={selectAllDispatchFiltered} disabled={loadingParties || loadingAnalysis}>Select Filtered</button>
-              <button type="button" onClick={() => setDispatchPartyIds([])} disabled={loadingParties || loadingAnalysis}>Clear</button>
-              <span>{dispatchPartyIds.length} selected</span>
-            </div>
-            <div className="checkbox-list">
-              {dispatchFiltered.map((p) => (
-                <label key={p.id} className="checkbox-row">
-                  <input
-                    type="checkbox"
-                    checked={dispatchPartyIds.includes(p.id)}
-                    onChange={() => toggleDispatch(p.id)}
-                    disabled={loadingParties || loadingAnalysis}
-                  />
-                  <span>{p.companyName}</span>
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="planner-actions">
-          <button
-            className="analyze-btn"
-            type="button"
-            onClick={runAnalysis}
-            disabled={loadingParties || loadingAnalysis}
-          >
-            {loadingAnalysis ? 'Analyzing...' : 'Analyze Reallocation'}
-          </button>
-        </div>
-
-        {loadingParties && <p className="info">Loading parties...</p>}
-        {error && <p className="error">{error}</p>}
-      </div>
-
       <div className="planner-card workspace-card">
         <div className="workspace-header-row">
-          <h2>PDI Barcode Lookup</h2>
+          <h2>Automatic Party to PDI Cards</h2>
           <small>Source: umanmrp.in/get_all_pdi.php + mrp.umanerp.com/get_pdi_barcodes.php</small>
         </div>
 
         <div className="workspace-editor-grid">
           <div className="workspace-field">
-            <label>Party Name ID</label>
+            <label>Search Party</label>
             <input
               type="text"
-              value={partyNameIdInput}
-              onChange={(e) => setPartyNameIdInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') fetchAllPdisForParty(); }}
-              placeholder="Example: 747702d2-d72d-4845-8d32-ffba248241ce"
+              value={partyCardSearch}
+              onChange={(e) => setPartyCardSearch(e.target.value)}
+              placeholder="Search by party name"
             />
-          </div>
-          <div className="workspace-field">
-            <label>&nbsp;</label>
-            <button type="button" onClick={fetchAllPdisForParty} disabled={partyPdiListLoading}>
-              {partyPdiListLoading ? 'Loading PDIs...' : 'Load Party PDIs'}
-            </button>
           </div>
         </div>
 
+        {loadingParties && <p className="info">Loading parties...</p>}
+        {error && <p className="error">{error}</p>}
+
+        <div className="party-cards-grid">
+          {partyCardsFiltered.map((party) => (
+            <button
+              type="button"
+              key={`party-auto-${party.id}`}
+              className={`party-card-btn ${String(partyNameIdInput || '') === String(party.id) ? 'active' : ''}`}
+              onClick={() => fetchAllPdisForParty(party.id)}
+            >
+              <h4>{party.companyName}</h4>
+              <p>Party ID: {party.id}</p>
+            </button>
+          ))}
+        </div>
+
+        {partyPdiListLoading && <p className="info">Loading PDIs for selected party...</p>}
         {partyPdiListError && <p className="error">{partyPdiListError}</p>}
 
         {partyPdiList.length > 0 && (
@@ -904,25 +847,6 @@ const PartyReallocationPlanner = () => {
             </div>
           </div>
         )}
-
-        <div className="workspace-editor-grid">
-          <div className="workspace-field">
-            <label>PDI ID</label>
-            <input
-              type="text"
-              value={pdiIdInput}
-              onChange={(e) => setPdiIdInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') fetchPdiBarcodesFromMrp(); }}
-              placeholder="Example: 009"
-            />
-          </div>
-          <div className="workspace-field">
-            <label>&nbsp;</label>
-            <button type="button" onClick={fetchPdiBarcodesFromMrp} disabled={pdiLookupLoading}>
-              {pdiLookupLoading ? 'Fetching...' : 'Fetch Barcodes'}
-            </button>
-          </div>
-        </div>
 
         {pdiLookupError && <p className="error">{pdiLookupError}</p>}
 

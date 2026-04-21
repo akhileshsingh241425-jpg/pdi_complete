@@ -147,6 +147,9 @@ def create_app():
     # ============================================
     # AUTO PACKING VALIDATION SCHEDULER
     # Runs every 10 minutes to check for issues
+    # DISABLED BY DEFAULT — heavy MRP API calls + WhatsApp
+    # alerts that overload Waitress thread pool. Enable via
+    # env var ENABLE_PACKING_SCHEDULER=true if needed.
     # ============================================
     def run_packing_validation():
         """Background task to validate packing every 10 minutes"""
@@ -204,12 +207,26 @@ def create_app():
         scheduler_thread = threading.Thread(target=validation_loop, daemon=True)
         scheduler_thread.start()
     
-    # Start scheduler when app starts (only in production mode)
-    if os.environ.get('FLASK_ENV') != 'development' or os.environ.get('START_SCHEDULER') == 'true':
+    # Start scheduler ONLY if explicitly enabled (default: OFF)
+    if os.environ.get('ENABLE_PACKING_SCHEDULER', 'false').lower() == 'true':
+        print("⚙️  ENABLE_PACKING_SCHEDULER=true — starting packing validation scheduler")
         run_packing_validation()
-    
-    # Start Telegram dispatch bot scheduler
-    from app.routes.telegram_routes import start_telegram_scheduler
-    start_telegram_scheduler(app)
-    
+    else:
+        print("⏸️  Packing validation scheduler DISABLED (set ENABLE_PACKING_SCHEDULER=true to enable)")
+
+    # Start Telegram dispatch bot scheduler — also opt-in
+    if os.environ.get('ENABLE_TELEGRAM_BOT', 'false').lower() == 'true':
+        print("⚙️  ENABLE_TELEGRAM_BOT=true — starting Telegram bot")
+        from app.routes.telegram_routes import start_telegram_scheduler
+        start_telegram_scheduler(app)
+    else:
+        print("⏸️  Telegram bot DISABLED (set ENABLE_TELEGRAM_BOT=true to enable)")
+
+    # Warm up the shared MySQL connection pool so first requests are fast
+    try:
+        from app.utils.db_pool import warm_pool
+        warm_pool()
+    except Exception as e:
+        print(f"[startup] db_pool warm skipped: {e}")
+
     return app

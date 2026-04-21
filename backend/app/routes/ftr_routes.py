@@ -4,15 +4,20 @@ FTR (Field Test Report) Routes
 
 from flask import Blueprint, request, jsonify, send_file
 from app.services.ftr_pdf_generator import create_ftr_report
+from app.utils.db_pool import get_db_connection      # pooled MySQL
+from app.utils import http_client                    # shared keep-alive session
 from config import Config
 import os
 import pymysql
-import requests as http_requests
 import re
 import json
 import pandas as pd
 from datetime import datetime
 import time
+
+# Backwards compat: existing code imports `http_requests` symbol heavily.
+# Point it at the shared pooled session instead of bare `requests` module.
+http_requests = http_client.http
 
 ftr_bp = Blueprint('ftr', __name__, url_prefix='/api/ftr')
 
@@ -20,17 +25,6 @@ ftr_bp = Blueprint('ftr', __name__, url_prefix='/api/ftr')
 # Structure: {party_id: {'data': {serial: details}, 'set': set(), 'timestamp': time}}
 DISPATCH_CACHE = {}
 DISPATCH_CACHE_TTL = 600  # 10 minutes
-
-
-def get_db_connection():
-    """Get database connection using Config"""
-    return pymysql.connect(
-        host=Config.MYSQL_HOST,
-        user=Config.MYSQL_USER,
-        password=Config.MYSQL_PASSWORD,
-        database=Config.MYSQL_DB,
-        cursorclass=pymysql.cursors.DictCursor
-    )
 
 
 @ftr_bp.route('/generate-report', methods=['POST'])
@@ -2854,7 +2848,8 @@ def pdi_status(pdi_id):
             return ('unknown', serial, None)
 
     if to_check:
-        with ThreadPoolExecutor(max_workers=30) as ex:
+        # Cap workers — under high concurrency 30/req balloons total threads
+        with ThreadPoolExecutor(max_workers=12) as ex:
             for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
                 status, serial, info = f.result()
                 if status == 'packed':
@@ -3467,7 +3462,7 @@ def actual_pdi_batch_compare():
                     return ('unknown', serial, None)
 
             if to_check:
-                with ThreadPoolExecutor(max_workers=30) as ex:
+                with ThreadPoolExecutor(max_workers=12) as ex:
                     for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
                         status, serial, info = f.result()
                         if status == 'packed':
@@ -3965,7 +3960,9 @@ def _refresh_parties_with_pdis_bg():
             return None
 
         results = []
-        with ThreadPoolExecutor(max_workers=40) as ex:
+        # 40 workers caused thread storms when scheduler ran in parallel.
+        # 15 is plenty given keep-alive + caching keeps repeat calls cheap.
+        with ThreadPoolExecutor(max_workers=15) as ex:
             futures = [ex.submit(check_party, p) for p in all_parties]
             for f in as_completed(futures):
                 r = f.result()

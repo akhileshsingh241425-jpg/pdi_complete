@@ -164,7 +164,7 @@ def get_all_mrp_data(company):
                 response = requests.post(
                     BARCODE_TRACKING_API,
                     json={'party_name': party_name},
-                    timeout=180
+                    timeout=30
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -175,13 +175,15 @@ def get_all_mrp_data(company):
                         print(f"MRP API: Got {len(party_data)} records from {party_name}")
                         return party_data
             except requests.exceptions.Timeout:
-                print(f"MRP API TIMEOUT for {party_name} (180s)")
+                print(f"MRP API TIMEOUT for {party_name} (30s)")
             except Exception as e:
                 print(f"MRP API Error for {party_name}: {str(e)}")
             return []
         
-        # Fetch all parties in parallel
-        with ThreadPoolExecutor(max_workers=len(party_names_to_fetch)) as executor:
+        # Fetch all parties in parallel — capped to avoid thread storm
+        # under concurrent user load. 6 in flight is plenty for ~10 parties.
+        max_workers = min(6, max(1, len(party_names_to_fetch)))
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(fetch_party, p): p for p in party_names_to_fetch}
             for future in as_completed(futures):
                 all_data.extend(future.result())

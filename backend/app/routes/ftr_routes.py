@@ -3364,48 +3364,119 @@ def actual_pdi_batch_compare():
                     if s not in serial_to_pdi:
                         serial_to_pdi[s] = pid
 
-        # 3. Bulk packing (party_name based)
-        packed_lookup = {}
-        if party_name:
-            try:
-                pr = http_requests.post(
-                    'https://umanmrp.in/api/get_barcode_tracking.php',
-                    json={'party_name': party_name}, timeout=120
-                )
-                if pr.status_code == 200:
-                    for it in (pr.json().get('data') or []):
-                        bc = str(it.get('barcode','') or '').strip().upper()
-                        if bc:
-                            packed_lookup[bc] = {
-                                'pallet_no': it.get('pallet_no',''),
-                                'running_order': it.get('running_order','') or it.get('ro_no','') or '',
-                                'packed_party': it.get('packed_party','') or it.get('party_name','') or party_name,
-                                'packing_date': it.get('packing_date',''),
-                                'box_no': it.get('box_no','')
-                            }
-            except Exception as e:
-                print(f"[batch_compare] pack fetch error: {e}")
-
-        # 4. Bulk dispatch (party_name based)
+        # 3. Bulk DISPATCH via party-dispatch-history.php (paginated, party_id based)
+        # SAME logic as /pdi-status endpoint: response has dispatch_summary, each item has
+        # pallet_nos dict {pallet_no: "barcode1 barcode2 ..."}
+        from datetime import timedelta
         dispatch_lookup = {}
-        if party_name:
-            try:
-                dr = http_requests.post(
-                    'https://umanmrp.in/api/party-dispatch-history.php',
-                    json={'party_name': party_name}, timeout=120
-                )
-                if dr.status_code == 200:
-                    for d in (dr.json().get('data') or []):
-                        bc = str(d.get('barcode','') or '').strip().upper()
-                        if bc:
-                            dispatch_lookup[bc] = {
-                                'vehicle_no': d.get('vehicle_no',''),
-                                'dispatch_date': d.get('dispatch_date',''),
-                                'dispatch_party': d.get('dispatch_party','') or party_name,
-                                'invoice_no': d.get('invoice_no','')
-                            }
-            except Exception as e:
-                print(f"[batch_compare] dispatch fetch error: {e}")
+        try:
+            days = 730
+            to_date = datetime.now().strftime('%Y-%m-%d')
+            from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+            page = 1
+            max_pages = 50
+            while page <= max_pages:
+                try:
+                    dr = http_requests.post(
+                        'https://umanmrp.in/api/party-dispatch-history.php',
+                        json={
+                            'party_id': party_id,
+                            'from_date': from_date,
+                            'to_date': to_date,
+                            'page': page,
+                            'limit': 10000
+                        },
+                        timeout=120,
+                        headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+                    )
+                    if dr.status_code != 200:
+                        break
+                    djson = dr.json()
+                    dispatch_summary = djson.get('dispatch_summary') or []
+                    if not dispatch_summary:
+                        break
+                    for d in dispatch_summary:
+                        dispatch_date = d.get('dispatch_date') or d.get('date', '')
+                        vehicle_no = d.get('vehicle_no', '') or 'Unknown'
+                        invoice_no = d.get('invoice_no', '')
+                        factory_name = d.get('factory_name', '')
+                        dispatch_party = d.get('dispatch_party', '') or vehicle_no
+                        pallet_nos = d.get('pallet_nos', {})
+                        if isinstance(pallet_nos, dict):
+                            for pallet_no, barcodes_str in pallet_nos.items():
+                                if not isinstance(barcodes_str, str):
+                                    continue
+                                for serial in barcodes_str.strip().split():
+                                    s = serial.strip().upper()
+                                    if not s:
+                                        continue
+                                    dispatch_lookup[s] = {
+                                        'pallet_no': pallet_no,
+                                        'dispatch_party': dispatch_party,
+                                        'vehicle_no': vehicle_no,
+                                        'dispatch_date': dispatch_date,
+                                        'invoice_no': invoice_no,
+                                        'factory_name': factory_name
+                                    }
+                    page += 1
+                except Exception as e:
+                    print(f"[batch_compare] dispatch page {page} error: {e}")
+                    break
+        except Exception as e:
+            print(f"[batch_compare] dispatch fetch error: {e}")
+
+        # 4. PACKING: only check actual barcodes that are NOT dispatched (saves time).
+        # Per-barcode call to get_barcode_tracking.php (POST data={'barcode': serial}).
+        # Reuse pdi_status._pack_cache (30 min TTL) so card views and batch share cache.
+        packed_lookup = {}
+        try:
+            pack_cache = pdi_status.__dict__.setdefault('_pack_cache', {})
+            PACK_TTL = 1800
+            not_disp = [s for s in actual_set if s not in dispatch_lookup]
+            to_check = []
+            for s in not_disp:
+                ent = pack_cache.get(s)
+                if ent and (now - ent['t']) < PACK_TTL:
+                    if ent['status'] == 'packed':
+                        packed_lookup[s] = ent.get('info') or {}
+                else:
+                    to_check.append(s)
+
+            def _check_pack(serial):
+                try:
+                    r = http_requests.post(
+                        'https://umanmrp.in/api/get_barcode_tracking.php',
+                        data={'barcode': serial}, timeout=8
+                    )
+                    if r.status_code != 200:
+                        return ('unknown', serial, None)
+                    d = r.json()
+                    if not d.get('success') or not d.get('data'):
+                        return ('pending', serial, None)
+                    pack = (d['data'] or {}).get('packing') or {}
+                    if pack.get('packing_date'):
+                        return ('packed', serial, {
+                            'packing_date': pack.get('packing_date'),
+                            'box_no': pack.get('box_no', ''),
+                            'pallet_no': pack.get('pallet_no', ''),
+                            'running_order': pack.get('running_order', '') or pack.get('ro_no', ''),
+                            'packed_party': pack.get('party_name', '') or party_name
+                        })
+                    return ('pending', serial, None)
+                except Exception:
+                    return ('unknown', serial, None)
+
+            if to_check:
+                with ThreadPoolExecutor(max_workers=30) as ex:
+                    for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
+                        status, serial, info = f.result()
+                        if status == 'packed':
+                            packed_lookup[serial] = info or {}
+                            pack_cache[serial] = {'t': now, 'status': 'packed', 'info': info}
+                        elif status == 'pending':
+                            pack_cache[serial] = {'t': now, 'status': 'pending'}
+        except Exception as e:
+            print(f"[batch_compare] pack check error: {e}")
 
         # 5. Bucket actual barcodes
         matched_any = set()

@@ -187,6 +187,10 @@ const PartyReallocationPlanner = () => {
 
   // New PDI lookup (mrp.umanerp.com/get/get_pdi_barcodes.php)
   const [pdiIdInput, setPdiIdInput] = useState('');
+  const [partyNameIdInput, setPartyNameIdInput] = useState('');
+  const [partyPdiListLoading, setPartyPdiListLoading] = useState(false);
+  const [partyPdiListError, setPartyPdiListError] = useState('');
+  const [partyPdiList, setPartyPdiList] = useState([]);
   const [pdiLookupLoading, setPdiLookupLoading] = useState(false);
   const [pdiLookupError, setPdiLookupError] = useState('');
   const [pdiLookupData, setPdiLookupData] = useState(null);
@@ -373,13 +377,46 @@ const PartyReallocationPlanner = () => {
     window.open(url, '_blank', 'noopener,noreferrer');
   };
 
-  // Fetch barcodes from MRP using just the PDI ID
-  const fetchPdiBarcodesFromMrp = async () => {
-    const pdiId = (pdiIdInput || '').trim();
+  const fetchAllPdisForParty = async () => {
+    const partyNameId = (partyNameIdInput || '').trim();
+    if (!partyNameId) {
+      setPartyPdiListError('Please enter party_name_id');
+      return;
+    }
+
+    setPartyPdiListLoading(true);
+    setPartyPdiListError('');
+    setPartyPdiList([]);
+
+    try {
+      const resp = await fetch('https://umanmrp.in/get/get_all_pdi.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ party_name_id: partyNameId })
+      });
+      const data = await resp.json();
+      if (!resp.ok || data?.status !== 'success') {
+        throw new Error(data?.message || data?.error || 'Failed to fetch PDIs for this party');
+      }
+      const list = Array.isArray(data?.data) ? data.data : [];
+      setPartyPdiList(list);
+      if (!list.length) {
+        setPartyPdiListError('No PDI found for this party_name_id');
+      }
+    } catch (err) {
+      setPartyPdiListError(err.message || 'Failed to fetch PDIs for this party');
+    } finally {
+      setPartyPdiListLoading(false);
+    }
+  };
+
+  const fetchPdiBarcodesById = async (pdiIdValue) => {
+    const pdiId = String(pdiIdValue || '').trim();
     if (!pdiId) {
       setPdiLookupError('Please enter a PDI ID');
       return;
     }
+    setPdiIdInput(pdiId);
     setPdiLookupLoading(true);
     setPdiLookupError('');
     setPdiLookupData(null);
@@ -406,6 +443,11 @@ const PartyReallocationPlanner = () => {
     } finally {
       setPdiLookupLoading(false);
     }
+  };
+
+  // Fetch barcodes from MRP using just the PDI ID
+  const fetchPdiBarcodesFromMrp = async () => {
+    await fetchPdiBarcodesById(pdiIdInput);
   };
 
   const downloadPdiBarcodesCsv = () => {
@@ -817,8 +859,51 @@ const PartyReallocationPlanner = () => {
       <div className="planner-card workspace-card">
         <div className="workspace-header-row">
           <h2>PDI Barcode Lookup</h2>
-          <small>Source: mrp.umanerp.com / get_pdi_barcodes.php</small>
+          <small>Source: umanmrp.in/get_all_pdi.php + mrp.umanerp.com/get_pdi_barcodes.php</small>
         </div>
+
+        <div className="workspace-editor-grid">
+          <div className="workspace-field">
+            <label>Party Name ID</label>
+            <input
+              type="text"
+              value={partyNameIdInput}
+              onChange={(e) => setPartyNameIdInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') fetchAllPdisForParty(); }}
+              placeholder="Example: 747702d2-d72d-4845-8d32-ffba248241ce"
+            />
+          </div>
+          <div className="workspace-field">
+            <label>&nbsp;</label>
+            <button type="button" onClick={fetchAllPdisForParty} disabled={partyPdiListLoading}>
+              {partyPdiListLoading ? 'Loading PDIs...' : 'Load Party PDIs'}
+            </button>
+          </div>
+        </div>
+
+        {partyPdiListError && <p className="error">{partyPdiListError}</p>}
+
+        {partyPdiList.length > 0 && (
+          <div className="workspace-editor">
+            <div className="workspace-editor-header">
+              <h3>{partyPdiList[0]?.party_name || 'Selected Party'} - PDI Cards</h3>
+              <p><strong>Total PDIs:</strong> {partyPdiList.length}</p>
+            </div>
+            <div className="party-cards-grid">
+              {partyPdiList.map((item) => (
+                <button
+                  type="button"
+                  key={`party-pdi-${item.id}`}
+                  className={`party-card-btn ${String(pdiLookupData?.pdiId || '') === String(item.id) ? 'active' : ''}`}
+                  onClick={() => fetchPdiBarcodesById(item.id)}
+                >
+                  <h4>{item.pdi_name || `PDI ${item.id}`}</h4>
+                  <p>PDI ID: {item.id}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="workspace-editor-grid">
           <div className="workspace-field">

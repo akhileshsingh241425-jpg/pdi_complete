@@ -863,6 +863,254 @@ body.pwa-mode .hide-in-pwa {
   }
 }
 
+/* Show only in PWA / mobile */
+.show-in-pwa,
+.show-on-mobile {
+  display: none;
+}
+body.pwa-mode .show-in-pwa {
+  display: flex;
+}
+@media (max-width: 900px) {
+  .show-on-mobile {
+    display: flex;
+  }
+}
+
+/* ===================================================== */
+/* Gautam Solar Brand Top Bar (PWA + mobile)              */
+/* ===================================================== */
+.gs-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin: -8px -8px 10px -8px;   /* bleed to edges */
+  background: linear-gradient(135deg, #0b4d8c 0%, #0f6cbd 50%, #f59e0b 180%);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(11, 77, 140, 0.28);
+  border-bottom-left-radius: 16px;
+  border-bottom-right-radius: 16px;
+}
+.gs-topbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.gs-logo {
+  flex: 0 0 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #ffc94a 0%, #f59e0b 100%);
+  color: #0b3c6d;
+  font-weight: 900;
+  font-size: 15px;
+  letter-spacing: 0.5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.4);
+}
+.gs-topbar-text { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.gs-topbar-text h1 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+.gs-topbar-text span {
+  font-size: 11px;
+  opacity: 0.9;
+  font-weight: 500;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+/* Professional shimmer skeleton */
+@keyframes gs-shimmer {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+/* Polished info/error messages */
+.party-reallocation-planner .info {
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  border: 1px solid #bfdbfe;
+  color: #1e40af;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.party-reallocation-planner .error {
+  background: linear-gradient(135deg, #fef2f2, #fee2e2);
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  padding: 10px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Upgrade loading bar */
+.pdi-status-loading {
+  background: linear-gradient(135deg, #fff8e6 0%, #fff3d1 100%);
+  border: 1px solid #f1d28e;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.12);
+}
+.pdi-status-loading p { font-weight: 500; }
+
+/* Smoother cards - soft elevation */
+.planner-card,
+.result-card,
+.pdi-status-panel,
+.actual-compare-panel,
+.party-card-btn {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.party-card-btn:hover {
+  box-shadow: 0 8px 20px rgba(15, 108, 189, 0.14);
+}
+
+/* Primary buttons - branded gradient */
+.status-toolbar button:first-child,
+.actual-pdi-actions button.primary,
+.analyze-btn {
+  background: linear-gradient(135deg, #0f6cbd 0%, #0b4d8c 100%);
+  border: none;
+  color: #fff;
+  box-shadow: 0 2px 6px rgba(11, 77, 140, 0.25);
+}
+.status-toolbar button:first-child:hover,
+.actual-pdi-actions button.primary:hover,
+.analyze-btn:hover {
+  background: linear-gradient(135deg, #1479cc 0%, #0f6cbd 100%);
+  box-shadow: 0 4px 12px rgba(11, 77, 140, 0.35);
+  transform: translateY(-1px);
+}
+
+/* Status cards - subtle glow on hover */
+.status-card {
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.status-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.15);
+}
+
+/* Tabs - refined pill */
+.tab-btn {
+  font-weight: 600;
+  border-radius: 999px;
+}
+.tab-btn.active {
+  background: linear-gradient(135deg, #0f6cbd, #0b4d8c);
+  color: #fff !important;
+  border-color: transparent;
+  box-shadow: 0 2px 8px rgba(11, 77, 140, 0.3);
+}
+
+/* Mobile fine-tuning — brand polish */
+@media (max-width: 640px) {
+  .party-reallocation-planner {
+    background: linear-gradient(180deg, #eef6ff 0%, #f7faff 40%, #ffffff 100%);
+  }
+
+  /* Tighter party detail header */
+  .party-detail-header {
+    background: #ffffff;
+    border: 1px solid #e0eaf5;
+    box-shadow: 0 2px 10px rgba(15, 108, 189, 0.08);
+  }
+  .party-detail-title h3 {
+    font-size: 14px;
+    font-weight: 700;
+  }
+  .party-detail-title p {
+    display: none;              /* hide "Party ID" on mobile */
+  }
+
+  /* Status cards mobile - 2 col with brand gradient highlight */
+  .status-cards-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .status-card {
+    padding: 14px 12px;
+    border-radius: 14px;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+  }
+  .status-card-value {
+    font-size: 22px;
+    font-weight: 800;
+  }
+  .status-card-label {
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Tab nav - sticky under topbar */
+  .party-detail-tabs {
+    position: sticky;
+    top: 60px;
+    z-index: 20;
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(6px);
+    padding: 8px 4px;
+    margin: 0 -8px 8px;
+    border-bottom: 1px solid #e0eaf5;
+  }
+
+  /* Section card wrappers */
+  .actual-compare-panel,
+  .pdi-status-panel {
+    border: 1px solid #e0eaf5;
+    box-shadow: 0 2px 10px rgba(15, 108, 189, 0.06);
+    border-radius: 14px;
+  }
+
+  /* Party cards — cleaner hero look on mobile */
+  .party-card-btn {
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(15, 108, 189, 0.08);
+  }
+  .party-card-btn:hover,
+  .party-card-btn:active {
+    transform: none;
+  }
+
+  /* Big primary buttons */
+  .actual-pdi-actions button.primary {
+    border-radius: 12px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+
+  /* Add PDI form — refined */
+  .add-batch-form {
+    border-radius: 14px;
+    box-shadow: 0 4px 14px rgba(15, 108, 189, 0.1);
+    background: linear-gradient(180deg, #f4f9ff, #ffffff);
+  }
+
+  /* Breakdown tables - subtle striping */
+  .batch-breakdown-table tr:nth-child(even),
+  .card-breakdown-table tr:nth-child(even) {
+    background: #f8fbff;
+  }
+}
+
+/* Very small phones */
+@media (max-width: 380px) {
+  .status-cards-grid { grid-template-columns: 1fr; }
+  .gs-topbar-text h1 { font-size: 14px; }
+  .gs-logo { flex-basis: 34px; height: 34px; font-size: 13px; }
+}
+
 
 .actual-pdi-box.highlight .actual-pdi-head h4 {
   font-size: 15px; color: #16324f;

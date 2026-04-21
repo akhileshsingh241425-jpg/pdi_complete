@@ -719,7 +719,7 @@ const PartyReallocationPlanner = () => {
     const manualParsed = parseSerials(manualBarcodeInput);
     const combined = Array.from(new Set([...actualBarcodes, ...manualParsed]));
     if (!combined.length) {
-      setActualCompareError('Pehle barcodes add karo — file upload karo ya manually paste karo');
+      setActualCompareError('Please add barcodes first — upload a file or paste them manually.');
       return;
     }
     const partyNameForRun = detailPartyName || (parties.find((p) => p.id === partyId) || {}).companyName || '';
@@ -800,7 +800,7 @@ const PartyReallocationPlanner = () => {
     if (!partyId) return;
     const combined = Array.from(new Set([...addBatchBarcodes, ...parseSerials(addBatchManual)]));
     if (!combined.length) {
-      alert('Pehle barcodes add karo (file ya manual)');
+      alert('Please add barcodes first (upload a file or paste manually).');
       return;
     }
     setAddBatchSaving(true);
@@ -1305,11 +1305,22 @@ const PartyReallocationPlanner = () => {
 
   return (
     <div className="party-reallocation-planner">
+      {/* PWA / mobile branded top bar */}
+      <div className="gs-topbar show-in-pwa show-on-mobile">
+        <div className="gs-topbar-brand">
+          <div className="gs-logo">GS</div>
+          <div className="gs-topbar-text">
+            <h1>Gautam Solar</h1>
+            <span>Party Reallocation</span>
+          </div>
+        </div>
+      </div>
+
       <div className="planner-header hide-in-pwa hide-on-mobile">
         <h1>Dynamic Party Reallocation Planner</h1>
         <p>
-          Read-only analysis tool: packed party aur dispatch party ko dynamic select karo.
-          Existing Dispatch Tracker logic unchanged rahega.
+          Read-only analysis dashboard: select packed party and dispatch party dynamically.
+          The existing Dispatch Tracker logic remains unchanged.
         </p>
       </div>
 
@@ -1473,7 +1484,7 @@ const PartyReallocationPlanner = () => {
 
             {pdiStatusData.summary?.pack_skipped_due_to_cap > 0 && (
               <p className="info">
-                Note: {pdiStatusData.summary.pack_skipped_due_to_cap} barcodes ka packing check skip hua (cap {pdiStatusData.summary.pack_check_capped_at}). Exact packed count ke liye <code>?pack_cap=10000</code> pass karo.
+                Note: {pdiStatusData.summary.pack_skipped_due_to_cap} barcodes were skipped during packing check (cap {pdiStatusData.summary.pack_check_capped_at}). For exact packed count, pass <code>?pack_cap=10000</code>.
               </p>
             )}
 
@@ -1650,7 +1661,7 @@ const PartyReallocationPlanner = () => {
                 {(actualCompareData.running_order_breakdown || []).length > 0 && (
                   <div className="ro-breakdown-section">
                     <h4>📦 Running Order Breakdown — Kitna Pack Hua</h4>
-                    <p className="muted">Packed barcodes ko unke running order ke hisaab se group kiya gaya hai.</p>
+                  <p className="muted">Packed barcodes grouped by their running order.</p>
                     <div className="status-table-scroll">
                       <table>
                         <thead>
@@ -1680,7 +1691,7 @@ const PartyReallocationPlanner = () => {
                 {(actualCompareData.dispatch_breakdown || []).length > 0 && (
                   <div className="ro-breakdown-section hide-on-mobile">
                     <h4>🚛 Dispatch Vehicle Breakdown — Actual Dispatched Modules</h4>
-                    <p className="muted">Jo barcodes already dispatch ho chuke hain unka vehicle-wise breakdown — kis party me pack hua tha aur kis party me dispatch hua.</p>
+                  <p className="muted">Vehicle-wise breakdown of already-dispatched barcodes — showing packed party and dispatch party.</p>
                     <div className="status-table-scroll">
                       <table>
                         <thead>
@@ -1739,7 +1750,7 @@ const PartyReallocationPlanner = () => {
                 {(actualCompareData.pending_sample || []).length > 0 && (
                   <div className="ro-breakdown-section">
                     <h4>⚠️ Not Packed Modules (first {(actualCompareData.pending_sample || []).length})</h4>
-                    <p className="muted">Ye barcodes actual PDI me the lekin pack nahi hue.</p>
+                  <p className="muted">These barcodes were part of the actual PDI but are not yet packed.</p>
                     <div className="status-table-scroll">
                       <table>
                         <thead>
@@ -1818,16 +1829,16 @@ const PartyReallocationPlanner = () => {
             <div className="workspace-editor-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <h3>Actual PDIs — {detailPartyName}</h3>
-                <p>Customer ke saath jo actual PDI hui uske barcodes upload karo. Har PDI alag batch (PDI 1, PDI 2, ...).</p>
+                <p>Upload the actual barcodes received by the customer. Each PDI batch is tracked separately (PDI 1, PDI 2, …).</p>
               </div>
               <button type="button" className="primary" onClick={() => setShowAddBatch(true)}>+ Add PDI</button>
             </div>
 
             {showAddBatch && (
               <div className="add-batch-form">
-                <h4>Naya Actual PDI Batch</h4>
+                <h4>New Actual PDI Batch</h4>
                 <div className="workspace-field">
-                  <label>Batch Name (optional — default "PDI N")</label>
+                  <label>Batch Name (optional — defaults to "PDI N")</label>
                   <input type="text" value={addBatchName} onChange={(e) => setAddBatchName(e.target.value)} placeholder="e.g. PDI 1 - Lot 05" />
                 </div>
                 <div className="actual-pdi-section-label">Excel / CSV Upload</div>
@@ -1848,7 +1859,7 @@ const PartyReallocationPlanner = () => {
                 <textarea
                   className="actual-barcode-textarea"
                   rows={4}
-                  placeholder="Ek line me ek barcode ya comma/space se alag karo"
+                  placeholder="One barcode per line, or separated by commas / spaces"
                   value={addBatchManual}
                   onChange={(e) => setAddBatchManual(e.target.value)}
                 />
@@ -1869,7 +1880,7 @@ const PartyReallocationPlanner = () => {
 
             {loadingBatches && <p className="info">Loading batches...</p>}
             {!loadingBatches && actualBatches.length === 0 && !showAddBatch && (
-              <p className="info">Koi Actual PDI batch nahi hai. Upar "+ Add PDI" se naya batch banao.</p>
+              <p className="info">No Actual PDI batches yet. Click "+ Add PDI" above to create your first batch.</p>
             )}
 
             {actualBatches.length > 0 && (
@@ -1925,7 +1936,7 @@ const PartyReallocationPlanner = () => {
             {batchCompareLoading && (
               <div className="pdi-status-loading">
                 <div className="spinner" />
-                <p>Compare ho raha hai... saare PDI cards check ho rahe hain + packing/dispatch.</p>
+                <p>Comparing against all PDI cards, packing and dispatch records…</p>
               </div>
             )}
             {batchCompareError && <p className="error">{batchCompareError}</p>}
@@ -1957,7 +1968,7 @@ const PartyReallocationPlanner = () => {
 
                 <div className="ro-breakdown-section">
                   <h4>📋 Per-PDI Card Breakdown</h4>
-                  <p className="muted">Is batch ke barcodes kis card me kitne hain, kitne pack/dispatch hue.</p>
+                  <p className="muted">Distribution of this batch across PDI cards — packed, dispatched and pending per card.</p>
                   <table className="result-table">
                     <thead>
                       <tr>

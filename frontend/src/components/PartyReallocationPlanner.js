@@ -1305,7 +1305,7 @@ const PartyReallocationPlanner = () => {
 
   return (
     <div className="party-reallocation-planner">
-      <div className="planner-header">
+      <div className="planner-header hide-in-pwa hide-on-mobile">
         <h1>Dynamic Party Reallocation Planner</h1>
         <p>
           Read-only analysis tool: packed party aur dispatch party ko dynamic select karo.
@@ -1503,7 +1503,7 @@ const PartyReallocationPlanner = () => {
               <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-pending`, pdiStatusData.all_pending)}>Pending CSV</button>
             </div>
 
-            <div className="status-tables">
+            <div className="status-tables hide-on-mobile">
               <div className="status-table-block">
                 <h4>Dispatch Vehicles ({(pdiStatusData.dispatch_groups || []).length})</h4>
                 <div className="status-table-scroll">
@@ -1678,7 +1678,7 @@ const PartyReallocationPlanner = () => {
 
                 {/* Dispatch Vehicle Breakdown */}
                 {(actualCompareData.dispatch_breakdown || []).length > 0 && (
-                  <div className="ro-breakdown-section">
+                  <div className="ro-breakdown-section hide-on-mobile">
                     <h4>🚛 Dispatch Vehicle Breakdown — Actual Dispatched Modules</h4>
                     <p className="muted">Jo barcodes already dispatch ho chuke hain unka vehicle-wise breakdown — kis party me pack hua tha aur kis party me dispatch hua.</p>
                     <div className="status-table-scroll">
@@ -2005,7 +2005,7 @@ const PartyReallocationPlanner = () => {
                 )}
 
                 {(batchCompareData.dispatch_breakdown || []).length > 0 && (
-                  <div className="ro-breakdown-section">
+                  <div className="ro-breakdown-section hide-on-mobile">
                     <h4>🚚 Dispatch Vehicle Breakdown</h4>
                     <table className="result-table">
                       <thead><tr><th>#</th><th>Vehicle No</th><th>Dispatch Party</th><th>Count</th></tr></thead>

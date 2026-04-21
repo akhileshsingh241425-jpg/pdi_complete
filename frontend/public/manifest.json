@@ -1,0 +1,19 @@
+{
+  "short_name": "Party Reallocation",
+  "name": "Party Reallocation Planner | Gautam Solar",
+  "description": "PDI Party Reallocation Planner - actual vs planned, dispatch & packing tracking",
+  "icons": [
+    {
+      "src": "gautam-solar-logo.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": "./?section=party-reallocation&pwa=1",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#0f172a",
+  "background_color": "#fafbfc"
+}

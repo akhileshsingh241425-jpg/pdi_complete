@@ -3097,6 +3097,402 @@ def delete_actual_pdi_barcodes(pdi_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# Actual PDI BATCHES — party-level multi-batch storage (PDI 1, PDI 2, ... PDI N)
+# Each party can have many actual PDI batches. Each batch is independent of
+# the planned PDI cards — used only for compare reports.
+# ---------------------------------------------------------------------------
+
+def _ensure_actual_pdi_batches_table(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS actual_pdi_batches (
+            id              INT AUTO_INCREMENT PRIMARY KEY,
+            party_id        VARCHAR(64) NOT NULL,
+            party_name      VARCHAR(255) DEFAULT NULL,
+            batch_no        INT NOT NULL,
+            batch_name      VARCHAR(255) DEFAULT NULL,
+            filename        VARCHAR(255) DEFAULT NULL,
+            barcode_count   INT DEFAULT 0,
+            barcodes_json   LONGTEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY uniq_party_batch (party_id, batch_no),
+            KEY idx_party (party_id)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+    """)
+
+
+@ftr_bp.route('/actual-pdi-batches/<party_id>', methods=['GET'])
+def list_actual_pdi_batches(party_id):
+    """List all actual PDI batches for a party (without barcodes for speed)."""
+    try:
+        party_id = str(party_id).strip()
+        if not party_id:
+            return jsonify({"success": False, "error": "party_id required"}), 400
+        conn = get_db_connection()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        _ensure_actual_pdi_batches_table(cursor)
+        cursor.execute("""
+            SELECT id, party_id, party_name, batch_no, batch_name, filename,
+                   barcode_count, created_at, updated_at
+            FROM actual_pdi_batches WHERE party_id = %s
+            ORDER BY batch_no ASC
+        """, (party_id,))
+        rows = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        batches = []
+        for r in rows:
+            batches.append({
+                "id": r.get('id'),
+                "party_id": r.get('party_id'),
+                "party_name": r.get('party_name'),
+                "batch_no": r.get('batch_no'),
+                "batch_name": r.get('batch_name') or f"PDI {r.get('batch_no')}",
+                "filename": r.get('filename') or '',
+                "count": r.get('barcode_count') or 0,
+                "created_at": str(r.get('created_at') or ''),
+                "updated_at": str(r.get('updated_at') or '')
+            })
+        return jsonify({"success": True, "batches": batches})
+    except Exception as e:
+        print(f"[list_actual_pdi_batches] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-batches/<party_id>', methods=['POST'])
+def create_actual_pdi_batch(party_id):
+    """Create a new actual PDI batch for a party. Auto-assigns batch_no.
+
+    Body: { party_name, batch_name?, filename?, barcodes:[] }
+    """
+    try:
+        party_id = str(party_id).strip()
+        if not party_id:
+            return jsonify({"success": False, "error": "party_id required"}), 400
+        body = request.get_json(silent=True) or {}
+        party_name = str(body.get('party_name') or '').strip() or None
+        batch_name = str(body.get('batch_name') or '').strip() or None
+        filename = str(body.get('filename') or '').strip() or None
+        barcodes = body.get('barcodes') or []
+        if not isinstance(barcodes, list):
+            return jsonify({"success": False, "error": "barcodes must be a list"}), 400
+        cleaned = sorted({str(b).strip().upper() for b in barcodes if str(b).strip()})
+        payload = json.dumps(cleaned, ensure_ascii=False)
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        _ensure_actual_pdi_batches_table(cursor)
+        cursor.execute("SELECT COALESCE(MAX(batch_no),0)+1 FROM actual_pdi_batches WHERE party_id=%s", (party_id,))
+        next_no = cursor.fetchone()[0] or 1
+        if not batch_name:
+            batch_name = f"PDI {next_no}"
+        cursor.execute("""
+            INSERT INTO actual_pdi_batches
+                (party_id, party_name, batch_no, batch_name, filename, barcode_count, barcodes_json)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (party_id, party_name, next_no, batch_name, filename, len(cleaned), payload))
+        new_id = cursor.lastrowid
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": True, "id": new_id, "batch_no": next_no, "batch_name": batch_name, "count": len(cleaned)})
+    except Exception as e:
+        print(f"[create_actual_pdi_batch] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-batches/<party_id>/<int:batch_id>', methods=['GET'])
+def get_actual_pdi_batch(party_id, batch_id):
+    """Fetch a single batch with its barcodes."""
+    try:
+        party_id = str(party_id).strip()
+        conn = get_db_connection()
+        cursor = conn.cursor(pymysql.cursors.DictCursor)
+        _ensure_actual_pdi_batches_table(cursor)
+        cursor.execute("""
+            SELECT * FROM actual_pdi_batches WHERE party_id=%s AND id=%s
+        """, (party_id, batch_id))
+        row = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if not row:
+            return jsonify({"success": False, "error": "batch not found"}), 404
+        try:
+            bcs = json.loads(row.get('barcodes_json') or '[]')
+        except Exception:
+            bcs = []
+        return jsonify({
+            "success": True,
+            "id": row.get('id'),
+            "party_id": row.get('party_id'),
+            "party_name": row.get('party_name'),
+            "batch_no": row.get('batch_no'),
+            "batch_name": row.get('batch_name'),
+            "filename": row.get('filename') or '',
+            "count": row.get('barcode_count') or len(bcs),
+            "barcodes": bcs,
+            "created_at": str(row.get('created_at') or ''),
+            "updated_at": str(row.get('updated_at') or '')
+        })
+    except Exception as e:
+        print(f"[get_actual_pdi_batch] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-batches/<party_id>/<int:batch_id>', methods=['PUT'])
+def update_actual_pdi_batch(party_id, batch_id):
+    """Update batch barcodes / name / filename. Body: any of {batch_name, filename, barcodes}."""
+    try:
+        body = request.get_json(silent=True) or {}
+        sets, params = [], []
+        if 'batch_name' in body:
+            sets.append("batch_name=%s"); params.append(str(body.get('batch_name') or '').strip() or None)
+        if 'filename' in body:
+            sets.append("filename=%s"); params.append(str(body.get('filename') or '').strip() or None)
+        if 'barcodes' in body:
+            barcodes = body.get('barcodes') or []
+            if not isinstance(barcodes, list):
+                return jsonify({"success": False, "error": "barcodes must be a list"}), 400
+            cleaned = sorted({str(b).strip().upper() for b in barcodes if str(b).strip()})
+            sets.append("barcodes_json=%s"); params.append(json.dumps(cleaned, ensure_ascii=False))
+            sets.append("barcode_count=%s"); params.append(len(cleaned))
+        if not sets:
+            return jsonify({"success": False, "error": "nothing to update"}), 400
+        params.extend([str(party_id).strip(), batch_id])
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        _ensure_actual_pdi_batches_table(cursor)
+        cursor.execute(f"UPDATE actual_pdi_batches SET {', '.join(sets)} WHERE party_id=%s AND id=%s", params)
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[update_actual_pdi_batch] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-batches/<party_id>/<int:batch_id>', methods=['DELETE'])
+def delete_actual_pdi_batch(party_id, batch_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        _ensure_actual_pdi_batches_table(cursor)
+        cursor.execute("DELETE FROM actual_pdi_batches WHERE party_id=%s AND id=%s", (str(party_id).strip(), batch_id))
+        conn.commit()
+        cursor.close()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"[delete_actual_pdi_batch] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/actual-pdi-batch-compare', methods=['POST'])
+def actual_pdi_batch_compare():
+    """Compare a single Actual PDI batch's barcodes against ALL planned PDI cards
+    of the party + party packing/dispatch data. Returns per-card breakdown.
+
+    Body: { party_id, party_name?, barcodes:[] }
+    Output: {
+      summary: { total_actual, matched_in_any_card, extras_no_card, packed, dispatched, pending },
+      card_breakdown: [ { pdi_id, pdi_name, plan_qty, actual_in_card, packed, dispatched, pending } ],
+      packed_sample, pending_sample, extras_sample, dispatch_breakdown, running_order_breakdown
+    }
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    try:
+        body = request.get_json(silent=True) or {}
+        party_id = str(body.get('party_id') or '').strip()
+        party_name = str(body.get('party_name') or '').strip()
+        actual_raw = body.get('barcodes') or []
+        if not party_id:
+            return jsonify({"success": False, "error": "party_id required"}), 400
+        if not isinstance(actual_raw, list):
+            return jsonify({"success": False, "error": "barcodes must be a list"}), 400
+
+        actual_set = {str(b).strip().upper() for b in actual_raw if str(b).strip()}
+        if not actual_set:
+            return jsonify({"success": False, "error": "barcodes empty"}), 400
+
+        # 1. Get all PDIs of party
+        pdi_list_resp = http_requests.post(
+            'https://umanmrp.in/get/get_all_pdi.php',
+            json={"party_name_id": party_id}, timeout=60
+        )
+        all_pdis = (pdi_list_resp.json() if pdi_list_resp.status_code == 200 else {}).get('data') or []
+
+        # 2. Fetch barcodes per PDI in parallel
+        cache = actual_pdi_batch_compare.__dict__.setdefault('_pdi_bc_cache', {})
+        now = time.time()
+
+        def _fetch(pid):
+            ent = cache.get(pid)
+            if ent and (now - ent['t']) < 600:
+                return pid, ent['barcodes'], ent['details']
+            try:
+                r = http_requests.post(
+                    'https://mrp.umanerp.com/get/get_pdi_barcodes.php',
+                    json={"pdi_id": str(pid)}, timeout=120
+                )
+                d = r.json() if r.status_code == 200 else {}
+                bcs = [str(x).strip().upper() for x in (d.get('barcodes') or []) if str(x).strip()]
+                det = d.get('pdi_details') or {}
+                cache[pid] = {'t': now, 'barcodes': bcs, 'details': det}
+                return pid, bcs, det
+            except Exception:
+                return pid, [], {}
+
+        pdi_barcode_map = {}
+        pdi_detail_map = {}
+        serial_to_pdi = {}
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futures = [ex.submit(_fetch, item.get('id')) for item in all_pdis if item.get('id')]
+            for f in as_completed(futures):
+                pid, bcs, det = f.result()
+                bset = set(bcs)
+                pdi_barcode_map[pid] = bset
+                pdi_detail_map[pid] = det
+                for s in bset:
+                    if s not in serial_to_pdi:
+                        serial_to_pdi[s] = pid
+
+        # 3. Bulk packing (party_name based)
+        packed_lookup = {}
+        if party_name:
+            try:
+                pr = http_requests.post(
+                    'https://umanmrp.in/api/get_barcode_tracking.php',
+                    json={'party_name': party_name}, timeout=120
+                )
+                if pr.status_code == 200:
+                    for it in (pr.json().get('data') or []):
+                        bc = str(it.get('barcode','') or '').strip().upper()
+                        if bc:
+                            packed_lookup[bc] = {
+                                'pallet_no': it.get('pallet_no',''),
+                                'running_order': it.get('running_order','') or it.get('ro_no','') or '',
+                                'packed_party': it.get('packed_party','') or it.get('party_name','') or party_name,
+                                'packing_date': it.get('packing_date',''),
+                                'box_no': it.get('box_no','')
+                            }
+            except Exception as e:
+                print(f"[batch_compare] pack fetch error: {e}")
+
+        # 4. Bulk dispatch (party_name based)
+        dispatch_lookup = {}
+        if party_name:
+            try:
+                dr = http_requests.post(
+                    'https://umanmrp.in/api/party-dispatch-history.php',
+                    json={'party_name': party_name}, timeout=120
+                )
+                if dr.status_code == 200:
+                    for d in (dr.json().get('data') or []):
+                        bc = str(d.get('barcode','') or '').strip().upper()
+                        if bc:
+                            dispatch_lookup[bc] = {
+                                'vehicle_no': d.get('vehicle_no',''),
+                                'dispatch_date': d.get('dispatch_date',''),
+                                'dispatch_party': d.get('dispatch_party','') or party_name,
+                                'invoice_no': d.get('invoice_no','')
+                            }
+            except Exception as e:
+                print(f"[batch_compare] dispatch fetch error: {e}")
+
+        # 5. Bucket actual barcodes
+        matched_any = set()
+        extras = set()
+        per_card = {}  # pid -> set of actual barcodes
+        for s in actual_set:
+            pid = serial_to_pdi.get(s)
+            if pid:
+                matched_any.add(s)
+                per_card.setdefault(pid, set()).add(s)
+            else:
+                extras.add(s)
+
+        packed_set = {s for s in actual_set if s in packed_lookup}
+        dispatched_set = {s for s in actual_set if s in dispatch_lookup}
+        pending_set = actual_set - packed_set - dispatched_set
+
+        # 6. Per-card breakdown
+        card_breakdown = []
+        for item in all_pdis:
+            pid = item.get('id')
+            if not pid:
+                continue
+            actual_in_card = per_card.get(pid, set())
+            packed_in_card = {s for s in actual_in_card if s in packed_lookup}
+            disp_in_card = {s for s in actual_in_card if s in dispatch_lookup}
+            pending_in_card = actual_in_card - packed_in_card - disp_in_card
+            det = pdi_detail_map.get(pid) or {}
+            card_breakdown.append({
+                "pdi_id": pid,
+                "pdi_name": item.get('pdi_name') or det.get('pdi_name') or f"PDI {pid}",
+                "wattage": item.get('wattage') or det.get('wattage') or '',
+                "plan_qty": int(item.get('quantity') or det.get('quantity') or 0),
+                "card_total_barcodes": len(pdi_barcode_map.get(pid, set())),
+                "actual_in_card": len(actual_in_card),
+                "packed": len(packed_in_card),
+                "dispatched": len(disp_in_card),
+                "pending": len(pending_in_card)
+            })
+        card_breakdown.sort(key=lambda x: -x['actual_in_card'])
+
+        # 7. Running order breakdown (from packed_lookup)
+        ro_break = {}
+        for s in actual_set:
+            info = packed_lookup.get(s)
+            if info:
+                ro = info.get('running_order') or 'Unknown'
+                ro_break.setdefault(ro, 0)
+                ro_break[ro] += 1
+        ro_breakdown = [{"running_order": k, "count": v} for k, v in sorted(ro_break.items(), key=lambda x: -x[1])]
+
+        # 8. Dispatch vehicle breakdown
+        veh_break = {}
+        for s in actual_set:
+            info = dispatch_lookup.get(s)
+            if info:
+                key = (info.get('vehicle_no') or 'Unknown', info.get('dispatch_party') or party_name)
+                veh_break.setdefault(key, 0)
+                veh_break[key] += 1
+        dispatch_breakdown = [
+            {"vehicle_no": k[0], "dispatch_party": k[1], "count": v}
+            for k, v in sorted(veh_break.items(), key=lambda x: -x[1])
+        ]
+
+        return jsonify({
+            "success": True,
+            "summary": {
+                "total_actual": len(actual_set),
+                "matched_in_any_card": len(matched_any),
+                "extras_no_card": len(extras),
+                "packed": len(packed_set),
+                "dispatched": len(dispatched_set),
+                "pending": len(pending_set)
+            },
+            "card_breakdown": card_breakdown,
+            "running_order_breakdown": ro_breakdown,
+            "dispatch_breakdown": dispatch_breakdown,
+            "packed_sample": [
+                {"serial": s, **(packed_lookup.get(s) or {})} for s in list(packed_set)[:300]
+            ],
+            "pending_sample": list(pending_set)[:300],
+            "extras_sample": list(extras)[:300],
+            "all_packed": sorted(packed_set),
+            "all_pending": sorted(pending_set),
+            "all_extras": sorted(extras),
+            "all_dispatched": sorted(dispatched_set)
+        })
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        print(f"[actual_pdi_batch_compare] error: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @ftr_bp.route('/pdi-actual-compare', methods=['POST'])
 def pdi_actual_compare():
     """Compare actual PDI barcodes (uploaded by user) against:

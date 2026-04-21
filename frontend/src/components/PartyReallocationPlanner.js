@@ -181,6 +181,10 @@ const PartyReallocationPlanner = () => {
     setDetailPartyId(party.id);
     setDetailPartyName(party.companyName || '');
     setActivePartyId(party.id);
+    setPartyDetailTab('cards');
+    setActiveBatchId(null);
+    setActiveBatchData(null);
+    setBatchCompareData(null);
     const newUrl = `${window.location.pathname}?section=party-reallocation&partyId=${encodeURIComponent(party.id)}&companyName=${encodeURIComponent(party.companyName || '')}`;
     window.history.pushState({ partyId: party.id, companyName: party.companyName }, '', newUrl);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -194,6 +198,11 @@ const PartyReallocationPlanner = () => {
     setPdiLookupError('');
     setPartyPdiListError('');
     setPartyNameIdInput('');
+    setPartyDetailTab('cards');
+    setActualBatches([]);
+    setActiveBatchId(null);
+    setActiveBatchData(null);
+    setBatchCompareData(null);
     const newUrl = `${window.location.pathname}?section=party-reallocation`;
     window.history.pushState({}, '', newUrl);
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -239,6 +248,23 @@ const PartyReallocationPlanner = () => {
   const [actualCompareError, setActualCompareError] = useState('');
   const [actualCompareData, setActualCompareData] = useState(null);
   const actualFileRef = useRef(null);
+
+  // Party-level Actual PDI batches (multi-PDI: PDI 1, PDI 2, ...)
+  const [partyDetailTab, setPartyDetailTab] = useState('cards'); // 'cards' | 'actual'
+  const [actualBatches, setActualBatches] = useState([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+  const [activeBatchId, setActiveBatchId] = useState(null);
+  const [activeBatchData, setActiveBatchData] = useState(null);
+  const [batchCompareLoading, setBatchCompareLoading] = useState(false);
+  const [batchCompareError, setBatchCompareError] = useState('');
+  const [batchCompareData, setBatchCompareData] = useState(null);
+  const [showAddBatch, setShowAddBatch] = useState(false);
+  const [addBatchName, setAddBatchName] = useState('');
+  const [addBatchFile, setAddBatchFile] = useState('');
+  const [addBatchBarcodes, setAddBatchBarcodes] = useState([]);
+  const [addBatchManual, setAddBatchManual] = useState('');
+  const [addBatchSaving, setAddBatchSaving] = useState(false);
+  const addBatchFileRef = useRef(null);
 
   const [pdiCards, setPdiCards] = useState([]);
   const [loadingPdiCards, setLoadingPdiCards] = useState(false);
@@ -703,6 +729,167 @@ const PartyReallocationPlanner = () => {
     }
   };
 
+  // ============================================================
+  // Actual PDI BATCHES (party-level multi-PDI: PDI 1, PDI 2, ...)
+  // ============================================================
+  const loadActualBatches = async (partyId) => {
+    if (!partyId) return;
+    setLoadingBatches(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/ftr/actual-pdi-batches/${encodeURIComponent(partyId)}`);
+      const j = await r.json();
+      if (r.ok && j?.success) {
+        setActualBatches(j.batches || []);
+      } else {
+        setActualBatches([]);
+      }
+    } catch (e) { setActualBatches([]); }
+    finally { setLoadingBatches(false); }
+  };
+
+  // Excel/CSV → array of barcode strings (same logic as handleActualFile)
+  const parseExcelToBarcodes = async (file) => {
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+    const bag = new Set();
+    for (const row of rows) {
+      for (const cell of row) {
+        const v = String(cell || '').trim();
+        if (v && v.length >= 6 && /^[A-Za-z0-9\-_/]+$/.test(v)) {
+          bag.add(v.toUpperCase());
+        }
+      }
+    }
+    if (rows.length > 1) {
+      const header = rows[0].map((h) => String(h || '').toLowerCase().trim());
+      const col = header.findIndex((h) => h === 'serial' || h === 'serial_number' || h === 'barcode' || h === 'module_id' || h === 'module' || h === 'sr no');
+      if (col >= 0) {
+        bag.clear();
+        for (let i = 1; i < rows.length; i++) {
+          const v = String(rows[i][col] || '').trim();
+          if (v) bag.add(v.toUpperCase());
+        }
+      }
+    }
+    return Array.from(bag);
+  };
+
+  const handleAddBatchFile = async (file) => {
+    if (!file) return;
+    setAddBatchFile(file.name);
+    try {
+      const bcs = await parseExcelToBarcodes(file);
+      setAddBatchBarcodes(bcs);
+    } catch (e) {
+      alert('File parse error: ' + (e.message || e));
+    }
+  };
+
+  const resetAddBatchForm = () => {
+    setShowAddBatch(false);
+    setAddBatchName('');
+    setAddBatchFile('');
+    setAddBatchBarcodes([]);
+    setAddBatchManual('');
+  };
+
+  const submitAddBatch = async () => {
+    const partyId = detailPartyId;
+    if (!partyId) return;
+    const combined = Array.from(new Set([...addBatchBarcodes, ...parseSerials(addBatchManual)]));
+    if (!combined.length) {
+      alert('Pehle barcodes add karo (file ya manual)');
+      return;
+    }
+    setAddBatchSaving(true);
+    try {
+      const r = await fetch(`${API_BASE_URL}/ftr/actual-pdi-batches/${encodeURIComponent(partyId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          party_name: detailPartyName || '',
+          batch_name: addBatchName.trim() || null,
+          filename: addBatchFile || null,
+          barcodes: combined
+        })
+      });
+      const j = await r.json();
+      if (!r.ok || !j?.success) throw new Error(j?.error || 'Save failed');
+      resetAddBatchForm();
+      await loadActualBatches(partyId);
+      // auto-open new batch
+      if (j.id) openBatch(j.id);
+    } catch (e) {
+      alert('Save failed: ' + (e.message || e));
+    } finally {
+      setAddBatchSaving(false);
+    }
+  };
+
+  const deleteBatch = async (batchId) => {
+    if (!detailPartyId || !batchId) return;
+    if (!window.confirm('Yeh PDI batch delete kar dein?')) return;
+    try {
+      await fetch(`${API_BASE_URL}/ftr/actual-pdi-batches/${encodeURIComponent(detailPartyId)}/${batchId}`, { method: 'DELETE' });
+      if (activeBatchId === batchId) {
+        setActiveBatchId(null);
+        setActiveBatchData(null);
+        setBatchCompareData(null);
+      }
+      await loadActualBatches(detailPartyId);
+    } catch (e) { alert('Delete failed: ' + (e.message || e)); }
+  };
+
+  const openBatch = async (batchId) => {
+    if (!detailPartyId || !batchId) return;
+    setActiveBatchId(batchId);
+    setActiveBatchData(null);
+    setBatchCompareData(null);
+    setBatchCompareError('');
+    setBatchCompareLoading(true);
+    try {
+      // Fetch batch barcodes
+      const br = await fetch(`${API_BASE_URL}/ftr/actual-pdi-batches/${encodeURIComponent(detailPartyId)}/${batchId}`);
+      const bj = await br.json();
+      if (!br.ok || !bj?.success) throw new Error(bj?.error || 'Batch fetch failed');
+      setActiveBatchData(bj);
+      // Run compare
+      const cr = await fetch(`${API_BASE_URL}/ftr/actual-pdi-batch-compare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          party_id: detailPartyId,
+          party_name: detailPartyName || bj.party_name || '',
+          barcodes: bj.barcodes || []
+        })
+      });
+      const cj = await cr.json();
+      if (!cr.ok || !cj?.success) throw new Error(cj?.error || 'Compare failed');
+      setBatchCompareData(cj);
+    } catch (e) {
+      setBatchCompareError(e.message || 'Failed');
+    } finally {
+      setBatchCompareLoading(false);
+    }
+  };
+
+  const closeBatch = () => {
+    setActiveBatchId(null);
+    setActiveBatchData(null);
+    setBatchCompareData(null);
+    setBatchCompareError('');
+  };
+
+  // Auto-load batches when party detail opens or tab switches to 'actual'
+  useEffect(() => {
+    if (detailPartyId && partyDetailTab === 'actual') {
+      loadActualBatches(detailPartyId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailPartyId, partyDetailTab]);
+
   const downloadSerialsCsv = (name, serials) => {
     if (!serials || !serials.length) return;
     const blob = new Blob(['serial\n' + serials.join('\n')], { type: 'text/csv;charset=utf-8' });
@@ -1099,13 +1286,29 @@ const PartyReallocationPlanner = () => {
               <h3>{(activeParty && activeParty.companyName) || detailPartyName || 'Selected Party'}</h3>
               <p><strong>Party ID:</strong> {detailPartyId}</p>
             </div>
+            <div className="party-detail-tabs">
+              <button
+                type="button"
+                className={`tab-btn ${partyDetailTab === 'cards' ? 'active' : ''}`}
+                onClick={() => { setPartyDetailTab('cards'); }}
+              >
+                📋 PDI Cards
+              </button>
+              <button
+                type="button"
+                className={`tab-btn ${partyDetailTab === 'actual' ? 'active' : ''}`}
+                onClick={() => { setPartyDetailTab('actual'); closePdiStatus(); }}
+              >
+                📤 Actual PDIs
+              </button>
+            </div>
           </div>
         )}
 
-        {partyPdiListLoading && <p className="info">Loading PDIs for selected party...</p>}
-        {partyPdiListError && <p className="error">{partyPdiListError}</p>}
+        {partyDetailTab === 'cards' && partyPdiListLoading && <p className="info">Loading PDIs for selected party...</p>}
+        {partyDetailTab === 'cards' && partyPdiListError && <p className="error">{partyPdiListError}</p>}
 
-        {partyPdiList.length > 0 && !pdiStatusActiveId && (
+        {partyDetailTab === 'cards' && partyPdiList.length > 0 && !pdiStatusActiveId && (
           <div className="workspace-editor">
             <div className="workspace-editor-header">
               <h3>{partyPdiList[0]?.party_name || 'Selected Party'} - PDI Cards</h3>
@@ -1133,15 +1336,15 @@ const PartyReallocationPlanner = () => {
           </div>
         )}
 
-        {pdiStatusLoading && (
+        {partyDetailTab === 'cards' && pdiStatusLoading && (
           <div className="pdi-status-loading">
             <div className="spinner" />
             <p>Loading PDI status... party dispatch history ek hi API call me aa rahi hai.</p>
           </div>
         )}
-        {pdiStatusError && <p className="error">{pdiStatusError}</p>}
+        {partyDetailTab === 'cards' && pdiStatusError && <p className="error">{pdiStatusError}</p>}
 
-        {pdiStatusData && (
+        {partyDetailTab === 'cards' && pdiStatusData && (
           <div className="pdi-status-panel">
             <div className="pdi-status-header">
               <div>
@@ -1154,79 +1357,6 @@ const PartyReallocationPlanner = () => {
                 </p>
               </div>
               <button type="button" className="back-btn" onClick={closePdiStatus}>Close</button>
-            </div>
-
-            {/* Actual PDI Upload & Compare - placed at top so it's immediately visible */}
-            <div className="actual-pdi-box highlight">
-              <div className="actual-pdi-head">
-                <div>
-                  <h4>📤 Actual PDI Barcodes — Add karo aur Full Report Lo</h4>
-                  <p>Customer ke saath jo actually PDI hui uski barcode list yahan add karo (file upload <strong>ya</strong> manually paste karo). System batayega: kitna pack hua, kitna nahi, kis running order ka kitna bacha, aur extra/missing detail.</p>
-                </div>
-              </div>
-
-              {savedBarcodesMeta && (
-                <div className="saved-barcodes-banner">
-                  💾 <strong>Saved in DB:</strong> {savedBarcodesMeta.count} barcodes
-                  {savedBarcodesMeta.filename ? ` (file: ${savedBarcodesMeta.filename})` : ''}
-                  {savedBarcodesMeta.updated_at ? ` — last updated ${String(savedBarcodesMeta.updated_at).slice(0, 19).replace('T', ' ')}` : ''}
-                  {savingBarcodes && <span className="muted"> — saving...</span>}
-                </div>
-              )}
-
-              {/* Option 1: File upload */}
-              <div className="actual-pdi-section-label">Option 1 — Excel / CSV File Upload</div>
-              <div className="actual-pdi-actions">
-                <input
-                  ref={actualFileRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  style={{ display: 'none' }}
-                  onChange={(e) => handleActualFile(e.target.files?.[0])}
-                />
-                <button type="button" onClick={() => actualFileRef.current?.click()}>
-                  {actualFileName ? `📄 ${actualFileName}` : '📁 Choose Excel / CSV File'}
-                </button>
-                <span className="muted">
-                  {actualBarcodes.length ? `✅ ${actualBarcodes.length} barcodes parsed from file` : 'No file chosen yet'}
-                </span>
-              </div>
-
-              {/* Option 2: Manual paste */}
-              <div className="actual-pdi-section-label">Option 2 — Manually Paste / Type Barcodes</div>
-              <div className="actual-pdi-manual-area">
-                <textarea
-                  className="actual-barcode-textarea"
-                  rows={5}
-                  placeholder="Barcodes yahan paste karo — ek line me ek barcode, ya comma/space se alag karo&#10;Example:&#10;GS04202500001&#10;GS04202500002&#10;GS04202500003"
-                  value={manualBarcodeInput}
-                  onChange={(e) => setManualBarcodeInput(e.target.value)}
-                />
-                <div className="actual-pdi-manual-count">
-                  {manualBarcodeInput.trim()
-                    ? `✅ ${parseSerials(manualBarcodeInput).length} barcodes detected`
-                    : 'Koi barcode nahi dala abhi'}
-                </div>
-              </div>
-
-              {/* Combined count & Compare button */}
-              <div className="actual-pdi-actions" style={{ marginTop: '10px' }}>
-                <span className="muted">
-                  {(() => {
-                    const total = new Set([...actualBarcodes, ...parseSerials(manualBarcodeInput)]).size;
-                    return total > 0 ? `📊 Total combined: ${total} unique barcodes` : 'Koi barcode add nahi hua';
-                  })()}
-                </span>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={runActualCompare}
-                  disabled={actualCompareLoading || (actualBarcodes.length === 0 && !manualBarcodeInput.trim())}
-                >
-                  {actualCompareLoading ? '⏳ Comparing...' : '🔍 Full Report Generate Karo'}
-                </button>
-              </div>
-              {actualCompareError && <p className="error">{actualCompareError}</p>}
             </div>
 
             <div className="status-cards-grid">
@@ -1585,6 +1715,233 @@ const PartyReallocationPlanner = () => {
                 <p className="info">Showing first 1000. Use filter or download CSV for full list.</p>
               )}
             </div>
+          </div>
+        )}
+
+        {/* ============================================================ */}
+        {/* TAB B — Actual PDIs (party-level multi-batch) */}
+        {/* ============================================================ */}
+        {isPartyDetailMode && partyDetailTab === 'actual' && !activeBatchId && (
+          <div className="workspace-editor">
+            <div className="workspace-editor-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <h3>Actual PDIs — {detailPartyName}</h3>
+                <p>Customer ke saath jo actual PDI hui uske barcodes upload karo. Har PDI alag batch (PDI 1, PDI 2, ...).</p>
+              </div>
+              <button type="button" className="primary" onClick={() => setShowAddBatch(true)}>+ Add PDI</button>
+            </div>
+
+            {showAddBatch && (
+              <div className="add-batch-form">
+                <h4>Naya Actual PDI Batch</h4>
+                <div className="workspace-field">
+                  <label>Batch Name (optional — default "PDI N")</label>
+                  <input type="text" value={addBatchName} onChange={(e) => setAddBatchName(e.target.value)} placeholder="e.g. PDI 1 - Lot 05" />
+                </div>
+                <div className="actual-pdi-section-label">Excel / CSV Upload</div>
+                <div className="actual-pdi-actions">
+                  <input
+                    ref={addBatchFileRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleAddBatchFile(e.target.files?.[0])}
+                  />
+                  <button type="button" onClick={() => addBatchFileRef.current?.click()}>
+                    {addBatchFile ? `📄 ${addBatchFile}` : '📁 Choose File'}
+                  </button>
+                  <span className="muted">{addBatchBarcodes.length ? `✅ ${addBatchBarcodes.length} barcodes` : 'No file'}</span>
+                </div>
+                <div className="actual-pdi-section-label">OR Manually Paste Barcodes</div>
+                <textarea
+                  className="actual-barcode-textarea"
+                  rows={4}
+                  placeholder="Ek line me ek barcode ya comma/space se alag karo"
+                  value={addBatchManual}
+                  onChange={(e) => setAddBatchManual(e.target.value)}
+                />
+                <div className="actual-pdi-manual-count">
+                  {addBatchManual.trim() ? `✅ ${parseSerials(addBatchManual).length} barcodes detected` : 'Koi manual barcode nahi'}
+                </div>
+                <div className="actual-pdi-actions" style={{ marginTop: 10 }}>
+                  <span className="muted">
+                    Total: {new Set([...addBatchBarcodes, ...parseSerials(addBatchManual)]).size} unique
+                  </span>
+                  <button type="button" className="primary" onClick={submitAddBatch} disabled={addBatchSaving}>
+                    {addBatchSaving ? '⏳ Saving...' : '💾 Save Batch'}
+                  </button>
+                  <button type="button" className="secondary" onClick={resetAddBatchForm} disabled={addBatchSaving}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {loadingBatches && <p className="info">Loading batches...</p>}
+            {!loadingBatches && actualBatches.length === 0 && !showAddBatch && (
+              <p className="info">Koi Actual PDI batch nahi hai. Upar "+ Add PDI" se naya batch banao.</p>
+            )}
+
+            {actualBatches.length > 0 && (
+              <div className="party-cards-grid">
+                {actualBatches.map((b) => (
+                  <div key={`batch-${b.id}`} className="party-card-btn party-card-clickable" style={{ position: 'relative' }}>
+                    <button
+                      type="button"
+                      style={{ all: 'unset', display: 'flex', alignItems: 'center', gap: 12, flex: 1, cursor: 'pointer' }}
+                      onClick={() => openBatch(b.id)}
+                    >
+                      <div className="party-card-avatar pdi-avatar">PDI</div>
+                      <div className="party-card-body">
+                        <h4>{b.batch_name}</h4>
+                        <div className="party-card-stats">
+                          <span>{b.count} barcodes</span>
+                          {b.filename ? <span> · {b.filename}</span> : null}
+                        </div>
+                        <div className="party-card-stats" style={{ fontSize: 11, color: '#6b7280' }}>
+                          {String(b.updated_at || b.created_at || '').slice(0, 19).replace('T', ' ')}
+                        </div>
+                      </div>
+                      <span className="party-card-arrow">&rsaquo;</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); deleteBatch(b.id); }}
+                      title="Delete batch"
+                      style={{ position: 'absolute', top: 8, right: 8, background: '#fee2e2', color: '#b91c1c', border: 'none', borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 12 }}
+                    >🗑</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Batch detail / report */}
+        {isPartyDetailMode && partyDetailTab === 'actual' && activeBatchId && (
+          <div className="pdi-status-panel">
+            <div className="pdi-status-header">
+              <div>
+                <h3>{activeBatchData?.batch_name || `Batch #${activeBatchId}`}</h3>
+                <p>
+                  <strong>Barcodes:</strong> {activeBatchData?.count || 0}
+                  {activeBatchData?.filename ? <> &nbsp;|&nbsp; <strong>File:</strong> {activeBatchData.filename}</> : null}
+                  {activeBatchData?.updated_at ? <> &nbsp;|&nbsp; <strong>Updated:</strong> {String(activeBatchData.updated_at).slice(0, 19).replace('T', ' ')}</> : null}
+                </p>
+              </div>
+              <button type="button" className="back-btn" onClick={closeBatch}>Close</button>
+            </div>
+
+            {batchCompareLoading && (
+              <div className="pdi-status-loading">
+                <div className="spinner" />
+                <p>Compare ho raha hai... saare PDI cards check ho rahe hain + packing/dispatch.</p>
+              </div>
+            )}
+            {batchCompareError && <p className="error">{batchCompareError}</p>}
+
+            {batchCompareData && (
+              <>
+                <div className="status-cards-grid">
+                  <div className="status-card status-total">
+                    <div className="status-card-label">Total Actual</div>
+                    <div className="status-card-value">{batchCompareData.summary?.total_actual || 0}</div>
+                  </div>
+                  <div className="status-card status-dispatched">
+                    <div className="status-card-label">Dispatched</div>
+                    <div className="status-card-value">{batchCompareData.summary?.dispatched || 0}</div>
+                  </div>
+                  <div className="status-card status-packed">
+                    <div className="status-card-label">Packed (not dispatched)</div>
+                    <div className="status-card-value">{(batchCompareData.summary?.packed || 0) - (batchCompareData.summary?.dispatched || 0)}</div>
+                  </div>
+                  <div className="status-card status-pending">
+                    <div className="status-card-label">Pending</div>
+                    <div className="status-card-value">{batchCompareData.summary?.pending || 0}</div>
+                  </div>
+                  <div className="status-card status-extras">
+                    <div className="status-card-label">Extras (no card)</div>
+                    <div className="status-card-value">{batchCompareData.summary?.extras_no_card || 0}</div>
+                  </div>
+                </div>
+
+                <div className="ro-breakdown-section">
+                  <h4>📋 Per-PDI Card Breakdown</h4>
+                  <p className="muted">Is batch ke barcodes kis card me kitne hain, kitne pack/dispatch hue.</p>
+                  <table className="result-table">
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>PDI Card</th>
+                        <th>Wattage</th>
+                        <th>Plan Qty</th>
+                        <th>Card Total</th>
+                        <th>Actual in Card</th>
+                        <th>Packed</th>
+                        <th>Dispatched</th>
+                        <th>Pending</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(batchCompareData.card_breakdown || []).map((c, i) => (
+                        <tr key={`cb-${c.pdi_id}`}>
+                          <td>{i + 1}</td>
+                          <td>{c.pdi_name}</td>
+                          <td>{c.wattage}</td>
+                          <td>{c.plan_qty}</td>
+                          <td>{c.card_total_barcodes}</td>
+                          <td><strong>{c.actual_in_card}</strong></td>
+                          <td>{c.packed}</td>
+                          <td>{c.dispatched}</td>
+                          <td>{c.pending}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {(batchCompareData.running_order_breakdown || []).length > 0 && (
+                  <div className="ro-breakdown-section">
+                    <h4>🏭 Running Order Breakdown</h4>
+                    <table className="result-table">
+                      <thead><tr><th>#</th><th>Running Order</th><th>Count</th></tr></thead>
+                      <tbody>
+                        {batchCompareData.running_order_breakdown.map((r, i) => (
+                          <tr key={`ro-${i}`}><td>{i + 1}</td><td>{r.running_order}</td><td>{r.count}</td></tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {(batchCompareData.dispatch_breakdown || []).length > 0 && (
+                  <div className="ro-breakdown-section">
+                    <h4>🚚 Dispatch Vehicle Breakdown</h4>
+                    <table className="result-table">
+                      <thead><tr><th>#</th><th>Vehicle No</th><th>Dispatch Party</th><th>Count</th></tr></thead>
+                      <tbody>
+                        {batchCompareData.dispatch_breakdown.map((d, i) => (
+                          <tr key={`vh-${i}`}>
+                            <td>{i + 1}</td>
+                            <td>{d.vehicle_no}</td>
+                            <td>{d.dispatch_party}</td>
+                            <td>{d.count}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                <div className="ro-breakdown-section">
+                  <h4>📥 Downloads</h4>
+                  <div className="actual-pdi-actions">
+                    <button type="button" onClick={() => downloadSerialsCsv(`packed_${activeBatchId}`, batchCompareData.all_packed)} disabled={!batchCompareData.all_packed?.length}>Packed CSV</button>
+                    <button type="button" onClick={() => downloadSerialsCsv(`dispatched_${activeBatchId}`, batchCompareData.all_dispatched)} disabled={!batchCompareData.all_dispatched?.length}>Dispatched CSV</button>
+                    <button type="button" onClick={() => downloadSerialsCsv(`pending_${activeBatchId}`, batchCompareData.all_pending)} disabled={!batchCompareData.all_pending?.length}>Pending CSV</button>
+                    <button type="button" onClick={() => downloadSerialsCsv(`extras_${activeBatchId}`, batchCompareData.all_extras)} disabled={!batchCompareData.all_extras?.length}>Extras CSV</button>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

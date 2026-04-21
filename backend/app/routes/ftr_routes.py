@@ -8,6 +8,7 @@ from config import Config
 import os
 import pymysql
 import requests as http_requests
+import re
 from datetime import datetime
 import time
 
@@ -2788,14 +2789,104 @@ def get_dispatch_by_party(party_id):
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-# ============================================================
-# Sales Parties (from logistics.umanerp.com getSalesParty API)
-# ============================================================
-SALES_PARTY_API = 'https://logistics.umanerp.com/api/party/getSalesParty'
-SALES_PERSON_ID = os.getenv('SALES_PERSON_ID', 'c8166f4a-0897-4239-a26d-ee42e9cee22a')
+def _extract_packing_count_fast(party_name):
+    """
+    Returns packing count for a party by streaming only the beginning of the
+    packing API response and extracting the top-level `count` field.
+    """
+    response = http_requests.post(
+        'https://umanmrp.in/api/get_barcode_tracking.php',
+        json={'party_name': party_name},
+        timeout=60,
+        stream=True
+    )
+    response.raise_for_status()
 
-# Cache: {'data': [...parties...], 'timestamp': float}
-SALES_PARTY_CACHE = {'data': None, 'timestamp': 0}
-SALES_PARTY_CACHE_TTL = 600  # 10 minutes
+    buffer = ''
+    try:
+        for chunk in response.iter_content(chunk_size=4096, decode_unicode=True):
+            if not chunk:
+                continue
+            buffer += chunk
+            match = re.search(r'"count"\s*:\s*(\d+)', buffer)
+            if match:
+                return int(match.group(1))
+            if len(buffer) > 120000:
+                break
+        return 0
+    finally:
+        response.close()
+
+
+@ftr_bp.route('/packing-count-by-party/<party_id>', methods=['GET'])
+def get_packing_count_by_party(party_id):
+    """
+    Dynamic packing-count lookup for any sales party.
+    This endpoint is read-only and does not change existing dispatch logic.
+    """
+    try:
+        if not party_id or len(party_id) < 10:
+            return jsonify({"success": False, "error": "Invalid party_id"}), 400
+
+        # Use cached list first; fetch fresh list if cache is empty.
+        parties = SALES_PARTY_CACHE.get('data')
+        if not parties:
+            person_id = request.args.get('person_id') or SALES_PERSON_ID
+            resp = http_requests.post(
+                SALES_PARTY_API,
+                json={"personId": person_id},
+                timeout=60
+            )
+            if resp.status_code != 200:
+                return jsonify({
+                    "success": False,
+                    "error": f"Sales party API returned HTTP {resp.status_code}",
+                    "detail": resp.text[:300]
+                }), 502
+
+            payload = resp.json()
+            raw_parties = payload.get('data') or []
+            parties = []
+            for p in raw_parties:
+                pid = p.get('PartyNameId')
+                name = (p.get('PartyName') or '').strip()
+                if not pid or not name:
+                    continue
+                parties.append({
+                    "id": pid,
+                    "companyName": name,
+                    "city": p.get('City') or '',
+                    "state": p.get('State') or '',
+                    "gst": p.get('GSTNo') or '',
+                    "status": p.get('Status') or ''
+                })
+            parties.sort(key=lambda x: x['companyName'].lower())
+            SALES_PARTY_CACHE['data'] = parties
+            SALES_PARTY_CACHE['timestamp'] = time.time()
+
+        selected = None
+        for party in parties:
+            if str(party.get('id')) == str(party_id):
+                selected = party
+                break
+
+        if not selected:
+            return jsonify({"success": False, "error": "Party not found for party_id"}), 404
+
+        party_name = selected.get('companyName', '').strip()
+        count = _extract_packing_count_fast(party_name)
+
+        return jsonify({
+            "success": True,
+            "party_id": party_id,
+            "party_name": party_name,
+            "packing_count": count,
+            "has_packing_data": count > 0
+        })
+
+    except http_requests.exceptions.Timeout:
+        return jsonify({"success": False, "error": "Packing API timeout"}), 504
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 
 

@@ -12,6 +12,7 @@ import WitnessReport from './components/WitnessReport';
 import CalibrationDashboard from './components/CalibrationDashboard';
 import QMSDashboard from './components/QMSDashboard';
 import DispatchTracker from './components/DispatchTracker';
+import PartyReallocationPlanner from './components/PartyReallocationPlanner';
 import PDIDocGenerator from './components/PDIDocGenerator';
 import BulkRFIDGenerator from './components/BulkRFIDGenerator';
 import Login from './components/Login';
@@ -293,8 +294,8 @@ function App() {
   const roleAccess = {
     super_admin: ['all'], // Full access
     user: ['all'], // Full access for normal users too
-    ftr_only: ['ftr-management', 'test-report', 'graph-manager', 'ai-assistant', 'ftr-dashboard', 'witness-report', 'dispatch-tracker', 'pdi-docs', 'rfid-report'],
-    ipqc_only: ['ipqc', 'daily-report', 'dispatch-tracker'],
+    ftr_only: ['ftr-management', 'test-report', 'graph-manager', 'ai-assistant', 'ftr-dashboard', 'witness-report', 'dispatch-tracker', 'party-reallocation', 'pdi-docs', 'rfid-report'],
+    ipqc_only: ['ipqc', 'daily-report', 'dispatch-tracker', 'party-reallocation'],
     coc_only: ['coc-dashboard']
   };
 
@@ -364,6 +365,8 @@ function App() {
         return <DailyReport />;
       case 'dispatch-tracker':
         return <DispatchTracker />;
+      case 'party-reallocation':
+        return <PartyReallocationPlanner />;
       case 'ftr-management':
         return <FTRManagement />;
 
@@ -461,6 +464,16 @@ function App() {
             >
               <span className="icon material-symbols-outlined">local_shipping</span>
               {!sidebarCollapsed && <span className="label">Dispatch Tracker</span>}
+            </li>
+          )}
+          {hasAccess('party-reallocation') && (
+            <li
+              className={activeSection === 'party-reallocation' ? 'active' : ''}
+              onClick={() => handleMenuItemClick('party-reallocation')}
+              title="Party Reallocation Planner"
+            >
+              <span className="icon material-symbols-outlined">swap_horiz</span>
+              {!sidebarCollapsed && <span className="label">Party Reallocation</span>}
             </li>
           )}
 

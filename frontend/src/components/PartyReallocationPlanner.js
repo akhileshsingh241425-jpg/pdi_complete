@@ -5,11 +5,65 @@ const API_BASE_URL = window.location.hostname === 'localhost'
   ? 'http://localhost:5003/api'
   : '/api';
 
+// Only these parties should appear in the Packed Under Party selector.
+const VALID_PACKING_PARTY_NAMES = [
+  'KPI GREEN ENERGY LIMITED',
+  'BONDADA ENGINEERING LIMITED',
+  'STERLING AND WILSON RENEWABLE ENERGY LIMITED',
+  'ILIOS POWER PRIVATE LIMITED',
+  'PURSHOTAM PROFILES PVT LTD',
+  'ORIANA POWER LIMITED',
+  'MEGHA ENGINEERING AND INFRASTRUCTURES LIMITED',
+  'PERIMETER SOLUTIONS',
+  'EASTMAN AUTO & POWER LIMITED',
+  'SUNDROPS ENERGIA PRIVATE LIMITED',
+  'RENNY STRIPS PVT LTD',
+  'KIRLOSKAR SOLAR TECHNOLOGIES PVT LTD',
+  'M/S VIDYUT ENERGY SYSTEMS PRIVATE LIMITED',
+  'ENRICH ENERGY PVT. LTD.',
+  'RMC SWITCH GEARS LIMITED',
+  'ENERTURE TECHNOLOGIES PVT LTD',
+  'ULTRA VIBRANT SOLAR ENERGY PVT. LTD.',
+  'MATHURESH SYNERGY PVT LTD',
+  'B R MANJU CONSTRUCTION COMPANY',
+  'POLYCAB INDIA LIMITED',
+  'EAPRO GLOBAL ENERGY PRIVATE LIMITED',
+  'QUANT SOLAR',
+  'SMARTEN POWER SYSTEMS LTD',
+  'TERAVON GREEN ENERGIES LIMITED',
+  'SARIKA NHPC',
+  'GODREJ & BOYCE MFG CO LTD.',
+  'JOTTER RENEWABLES PRIVATE LIMITED',
+  'GO SOLAR ENERGY SOLUTION PRIVATE LIMITED',
+  'NEVRONAS SOLAR PRIVATE LIMITED',
+  'LIVGUARD ENERGY TECHNOLOGIES PVT LTD',
+  'MOGLI LABS (INDIA) PRIVATE LIMITED',
+  'SU-KAM POWER SYSTEMS LTD',
+  'LIVFAST BATTERIES PVT. LTD.',
+  'VIDYUT ENERGY SYSTEMS PRIVATE LIMITED',
+  'NEXUS SOLAR ENERGY PVT LTD',
+  'RENEWPRO ENERGY PVT. LTD.',
+  'ABORIGINAL ENERGY PVT LTD',
+  'GALO ENERGY PVT LTD',
+  'SOLAR ERA',
+  'KIRLOSKAR SOLAR TECHNOLOGIES PVT LTD,MH',
+  'NEXAUM ENERGY PVT.LTD.',
+  'RAYS POWER INFRA LIMITED',
+  'SMART CONSTRUCTION',
+  'ROCS ENGINEERS',
+  'CARTWHEEL ENERGY',
+  'GHANPRIYA ENERGY SOLUTION PRIVATE LIMITED',
+  'TEST',
+  'REDINGTON LIMITED KARNATAKA'
+];
+
 const filterBySearch = (parties, term) => {
   const query = (term || '').trim().toLowerCase();
   if (!query) return parties;
   return parties.filter((p) => (p.companyName || '').toLowerCase().includes(query));
 };
+
+const normalizeName = (value) => (value || '').trim().toLowerCase();
 
 const PartyReallocationPlanner = () => {
   const [parties, setParties] = useState([]);
@@ -21,6 +75,11 @@ const PartyReallocationPlanner = () => {
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
   const [analysis, setAnalysis] = useState(null);
   const [error, setError] = useState('');
+
+  const packingNameSet = useMemo(
+    () => new Set(VALID_PACKING_PARTY_NAMES.map(normalizeName)),
+    []
+  );
 
   useEffect(() => {
     const loadParties = async () => {
@@ -45,8 +104,21 @@ const PartyReallocationPlanner = () => {
     loadParties();
   }, []);
 
-  const packedFiltered = useMemo(() => filterBySearch(parties, packedSearch), [parties, packedSearch]);
+  const packedOnlyParties = useMemo(
+    () => parties.filter((p) => packingNameSet.has(normalizeName(p.companyName))),
+    [parties, packingNameSet]
+  );
+
+  const packedFiltered = useMemo(
+    () => filterBySearch(packedOnlyParties, packedSearch),
+    [packedOnlyParties, packedSearch]
+  );
   const dispatchFiltered = useMemo(() => filterBySearch(parties, dispatchSearch), [parties, dispatchSearch]);
+
+  useEffect(() => {
+    // Keep only valid packed-party selections when list changes.
+    setPackedPartyIds((prev) => prev.filter((id) => packedOnlyParties.some((p) => p.id === id)));
+  }, [packedOnlyParties]);
 
   const togglePacked = (id) => {
     setPackedPartyIds((prev) => (
@@ -166,7 +238,7 @@ const PartyReallocationPlanner = () => {
       <div className="planner-card">
         <div className="planner-grid">
           <div className="planner-field">
-            <label>Packed Under Party (Search + Checkbox Multi-select)</label>
+            <label>Packed Under Party (Validated Packing Parties Only)</label>
             <input
               type="text"
               placeholder="Search packed parties..."

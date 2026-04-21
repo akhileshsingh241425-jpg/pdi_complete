@@ -9,6 +9,8 @@ import os
 import pymysql
 import requests as http_requests
 import re
+import json
+import pandas as pd
 from datetime import datetime
 import time
 
@@ -2886,6 +2888,427 @@ def get_packing_count_by_party(party_id):
 
     except http_requests.exceptions.Timeout:
         return jsonify({"success": False, "error": "Packing API timeout"}), 504
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+def _count_serial_tokens(value):
+    if not value:
+        return 0
+    tokens = re.split(r'[\s,;|]+', str(value).strip())
+    normalized = set()
+    for token in tokens:
+        token = token.strip().upper()
+        if token:
+            normalized.add(token)
+    return len(normalized)
+
+
+def _ensure_party_workspace_table(cursor):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS party_reallocation_workspace (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+            party_id VARCHAR(64) NOT NULL,
+            party_name VARCHAR(255) NOT NULL,
+            pdi_serials LONGTEXT NULL,
+            running_order_serials LONGTEXT NULL,
+            barcode_serials LONGTEXT NULL,
+            rejection_serials LONGTEXT NULL,
+            smt_module_serials LONGTEXT NULL,
+            pdi_number VARCHAR(120) NULL,
+            running_order_number VARCHAR(120) NULL,
+            rfid_data_json LONGTEXT NULL,
+            rfid_row_count INT NOT NULL DEFAULT 0,
+            rfid_uploaded_at DATETIME NULL,
+            pdi_count INT NOT NULL DEFAULT 0,
+            running_order_count INT NOT NULL DEFAULT 0,
+            barcode_count INT NOT NULL DEFAULT 0,
+            rejection_count INT NOT NULL DEFAULT 0,
+            smt_module_count INT NOT NULL DEFAULT 0,
+            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            UNIQUE KEY uq_party_reallocation_workspace_party_id (party_id),
+            KEY idx_party_reallocation_workspace_updated_at (updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        """
+    )
+
+    # Backward-compatible column adds for already-created tables.
+    cursor.execute("SHOW COLUMNS FROM party_reallocation_workspace")
+    existing = {row['Field'] for row in (cursor.fetchall() or [])}
+    column_adds = {
+        'pdi_number': "ALTER TABLE party_reallocation_workspace ADD COLUMN pdi_number VARCHAR(120) NULL",
+        'running_order_number': "ALTER TABLE party_reallocation_workspace ADD COLUMN running_order_number VARCHAR(120) NULL",
+        'rfid_data_json': "ALTER TABLE party_reallocation_workspace ADD COLUMN rfid_data_json LONGTEXT NULL",
+        'rfid_row_count': "ALTER TABLE party_reallocation_workspace ADD COLUMN rfid_row_count INT NOT NULL DEFAULT 0",
+        'rfid_uploaded_at': "ALTER TABLE party_reallocation_workspace ADD COLUMN rfid_uploaded_at DATETIME NULL"
+    }
+    for col, ddl in column_adds.items():
+        if col not in existing:
+            cursor.execute(ddl)
+
+
+def _normalize_rfid_col(name):
+    return re.sub(r'[^a-z0-9]', '', str(name or '').strip().lower())
+
+
+def _parse_rfid_excel(file_storage):
+    required_cols = [
+        'Date', 'ID', 'Pmax', 'Isc', 'Voc', 'Ipm', 'Vpm', 'FF', 'Rs', 'Rsh',
+        'Eff', 'T_Object', 'T_Target', 'Irr_Target', 'Class', 'Sweep_Time',
+        'Irr_MonCell', 'Isc_MonCell', 'T_MonCell', 'T_Ambient', 'Binning'
+    ]
+    canonical_map = {_normalize_rfid_col(c): c for c in required_cols}
+
+    df = pd.read_excel(file_storage)
+    df.columns = [str(c).strip() for c in df.columns]
+    input_map = {_normalize_rfid_col(c): c for c in df.columns}
+
+    missing = [col for key, col in canonical_map.items() if key not in input_map]
+    if missing:
+        return {
+            'ok': False,
+            'missing': missing,
+            'rows': []
+        }
+
+    normalized_df = pd.DataFrame()
+    for key, canonical in canonical_map.items():
+        normalized_df[canonical] = df[input_map[key]]
+
+    # Keep upload sane for DB payload size while still useful for compare/testing.
+    normalized_df = normalized_df.head(5000)
+
+    records = []
+    for row in normalized_df.to_dict(orient='records'):
+        clean = {}
+        for k, v in row.items():
+            if pd.isna(v):
+                clean[k] = None
+            elif isinstance(v, (pd.Timestamp, datetime)):
+                clean[k] = v.isoformat()
+            else:
+                clean[k] = v
+        records.append(clean)
+
+    return {
+        'ok': True,
+        'missing': [],
+        'rows': records
+    }
+
+
+@ftr_bp.route('/party-workspace/<party_id>', methods=['GET'])
+def get_party_workspace(party_id):
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            _ensure_party_workspace_table(cursor)
+            cursor.execute(
+                """
+                SELECT
+                    party_id,
+                    party_name,
+                    pdi_number,
+                    running_order_number,
+                    pdi_serials,
+                    running_order_serials,
+                    barcode_serials,
+                    rejection_serials,
+                    smt_module_serials,
+                    rfid_row_count,
+                    rfid_uploaded_at,
+                    pdi_count,
+                    running_order_count,
+                    barcode_count,
+                    rejection_count,
+                    smt_module_count,
+                    updated_at
+                FROM party_reallocation_workspace
+                WHERE party_id = %s
+                LIMIT 1
+                """,
+                (party_id,)
+            )
+            row = cursor.fetchone()
+
+        conn.commit()
+        conn.close()
+
+        if not row:
+            return jsonify({
+                "success": True,
+                "party_id": party_id,
+                "workspace": {
+                    "partyId": party_id,
+                    "partyName": "",
+                    "pdiNumber": "",
+                    "runningOrderNumber": "",
+                    "pdiSerials": "",
+                    "runningOrderSerials": "",
+                    "barcodeSerials": "",
+                    "rejectionSerials": "",
+                    "smtModuleSerials": "",
+                    "rfidRowCount": 0,
+                    "rfidUploadedAt": None,
+                    "counts": {
+                        "pdi": 0,
+                        "runningOrder": 0,
+                        "barcode": 0,
+                        "rejection": 0,
+                        "smtModule": 0
+                    },
+                    "updatedAt": None
+                }
+            })
+
+        return jsonify({
+            "success": True,
+            "party_id": party_id,
+            "workspace": {
+                "partyId": row.get('party_id'),
+                "partyName": row.get('party_name') or '',
+                "pdiNumber": row.get('pdi_number') or '',
+                "runningOrderNumber": row.get('running_order_number') or '',
+                "pdiSerials": row.get('pdi_serials') or '',
+                "runningOrderSerials": row.get('running_order_serials') or '',
+                "barcodeSerials": row.get('barcode_serials') or '',
+                "rejectionSerials": row.get('rejection_serials') or '',
+                "smtModuleSerials": row.get('smt_module_serials') or '',
+                "rfidRowCount": int(row.get('rfid_row_count') or 0),
+                "rfidUploadedAt": row.get('rfid_uploaded_at').isoformat() if row.get('rfid_uploaded_at') else None,
+                "counts": {
+                    "pdi": int(row.get('pdi_count') or 0),
+                    "runningOrder": int(row.get('running_order_count') or 0),
+                    "barcode": int(row.get('barcode_count') or 0),
+                    "rejection": int(row.get('rejection_count') or 0),
+                    "smtModule": int(row.get('smt_module_count') or 0)
+                },
+                "updatedAt": row.get('updated_at').isoformat() if row.get('updated_at') else None
+            }
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/party-workspace/<party_id>', methods=['POST'])
+def save_party_workspace(party_id):
+    try:
+        data = request.get_json(silent=True) or {}
+
+        party_name = (data.get('partyName') or '').strip()
+        pdi_number = (data.get('pdiNumber') or '').strip()
+        running_order_number = (data.get('runningOrderNumber') or '').strip()
+        pdi_serials = (data.get('pdiSerials') or '').strip()
+        running_order_serials = (data.get('runningOrderSerials') or '').strip()
+        barcode_serials = (data.get('barcodeSerials') or '').strip()
+        rejection_serials = (data.get('rejectionSerials') or '').strip()
+        smt_module_serials = (data.get('smtModuleSerials') or '').strip()
+
+        counts = {
+            'pdi': _count_serial_tokens(pdi_serials),
+            'running_order': _count_serial_tokens(running_order_serials),
+            'barcode': _count_serial_tokens(barcode_serials),
+            'rejection': _count_serial_tokens(rejection_serials),
+            'smt_module': _count_serial_tokens(smt_module_serials)
+        }
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            _ensure_party_workspace_table(cursor)
+            cursor.execute(
+                """
+                INSERT INTO party_reallocation_workspace (
+                    party_id,
+                    party_name,
+                    pdi_number,
+                    running_order_number,
+                    pdi_serials,
+                    running_order_serials,
+                    barcode_serials,
+                    rejection_serials,
+                    smt_module_serials,
+                    pdi_count,
+                    running_order_count,
+                    barcode_count,
+                    rejection_count,
+                    smt_module_count
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    party_name = VALUES(party_name),
+                    pdi_number = VALUES(pdi_number),
+                    running_order_number = VALUES(running_order_number),
+                    pdi_serials = VALUES(pdi_serials),
+                    running_order_serials = VALUES(running_order_serials),
+                    barcode_serials = VALUES(barcode_serials),
+                    rejection_serials = VALUES(rejection_serials),
+                    smt_module_serials = VALUES(smt_module_serials),
+                    pdi_count = VALUES(pdi_count),
+                    running_order_count = VALUES(running_order_count),
+                    barcode_count = VALUES(barcode_count),
+                    rejection_count = VALUES(rejection_count),
+                    smt_module_count = VALUES(smt_module_count)
+                """,
+                (
+                    party_id,
+                    party_name,
+                    pdi_number,
+                    running_order_number,
+                    pdi_serials,
+                    running_order_serials,
+                    barcode_serials,
+                    rejection_serials,
+                    smt_module_serials,
+                    counts['pdi'],
+                    counts['running_order'],
+                    counts['barcode'],
+                    counts['rejection'],
+                    counts['smt_module']
+                )
+            )
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "party_id": party_id,
+            "counts": {
+                "pdi": counts['pdi'],
+                "runningOrder": counts['running_order'],
+                "barcode": counts['barcode'],
+                "rejection": counts['rejection'],
+                "smtModule": counts['smt_module']
+            },
+            "pdiNumber": pdi_number,
+            "runningOrderNumber": running_order_number
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/party-workspace/<party_id>/upload-rfid-excel', methods=['POST'])
+def upload_party_workspace_rfid_excel(party_id):
+    try:
+        if 'file' not in request.files:
+            return jsonify({"success": False, "error": "Excel file is required"}), 400
+
+        file = request.files['file']
+        if not file or not file.filename:
+            return jsonify({"success": False, "error": "No file selected"}), 400
+
+        parsed = _parse_rfid_excel(file)
+        if not parsed['ok']:
+            return jsonify({
+                "success": False,
+                "error": "RFID Excel missing required columns",
+                "missingColumns": parsed['missing']
+            }), 400
+
+        rows = parsed['rows']
+        ids = []
+        for row in rows:
+            val = row.get('ID')
+            if val is None:
+                continue
+            text = str(val).strip().upper()
+            if text:
+                ids.append(text)
+        unique_ids = sorted(set(ids))
+
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            _ensure_party_workspace_table(cursor)
+            cursor.execute(
+                """
+                UPDATE party_reallocation_workspace
+                SET
+                    rfid_data_json = %s,
+                    rfid_row_count = %s,
+                    rfid_uploaded_at = NOW(),
+                    barcode_serials = %s,
+                    barcode_count = %s
+                WHERE party_id = %s
+                """,
+                (
+                    json.dumps(rows, ensure_ascii=True),
+                    len(rows),
+                    "\n".join(unique_ids),
+                    len(unique_ids),
+                    party_id
+                )
+            )
+
+        conn.commit()
+        conn.close()
+
+        return jsonify({
+            "success": True,
+            "party_id": party_id,
+            "rfidRows": len(rows),
+            "barcodeCount": len(unique_ids),
+            "message": "RFID Excel uploaded successfully"
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@ftr_bp.route('/party-workspace-summaries', methods=['GET'])
+def get_party_workspace_summaries():
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cursor:
+            _ensure_party_workspace_table(cursor)
+            cursor.execute(
+                """
+                SELECT
+                    party_id,
+                    party_name,
+                    pdi_number,
+                    running_order_number,
+                    rfid_row_count,
+                    rfid_uploaded_at,
+                    pdi_count,
+                    running_order_count,
+                    barcode_count,
+                    rejection_count,
+                    smt_module_count,
+                    updated_at
+                FROM party_reallocation_workspace
+                """
+            )
+            rows = cursor.fetchall() or []
+
+        conn.commit()
+        conn.close()
+
+        summary_map = {}
+        for row in rows:
+            pid = row.get('party_id')
+            if not pid:
+                continue
+            summary_map[pid] = {
+                "partyName": row.get('party_name') or '',
+                "pdiNumber": row.get('pdi_number') or '',
+                "runningOrderNumber": row.get('running_order_number') or '',
+                "rfidRowCount": int(row.get('rfid_row_count') or 0),
+                "rfidUploadedAt": row.get('rfid_uploaded_at').isoformat() if row.get('rfid_uploaded_at') else None,
+                "counts": {
+                    "pdi": int(row.get('pdi_count') or 0),
+                    "runningOrder": int(row.get('running_order_count') or 0),
+                    "barcode": int(row.get('barcode_count') or 0),
+                    "rejection": int(row.get('rejection_count') or 0),
+                    "smtModule": int(row.get('smt_module_count') or 0)
+                },
+                "updatedAt": row.get('updated_at').isoformat() if row.get('updated_at') else None
+            }
+
+        return jsonify({
+            "success": True,
+            "summaries": summary_map
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 

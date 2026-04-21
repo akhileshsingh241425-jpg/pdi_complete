@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useState } from 'react';
 import '../styles/PartyReallocationPlanner.css';
 
 const API_BASE_URL = window.location.hostname === 'localhost'
@@ -184,6 +184,14 @@ const PartyReallocationPlanner = () => {
   const [error, setError] = useState('');
   const [partyCardSearch, setPartyCardSearch] = useState('');
   const [activePartyId, setActivePartyId] = useState(initialPartyIdFromUrl);
+
+  // New PDI lookup (mrp.umanerp.com/get/get_pdi_barcodes.php)
+  const [pdiIdInput, setPdiIdInput] = useState('');
+  const [pdiLookupLoading, setPdiLookupLoading] = useState(false);
+  const [pdiLookupError, setPdiLookupError] = useState('');
+  const [pdiLookupData, setPdiLookupData] = useState(null);
+  const [pdiBarcodeFilter, setPdiBarcodeFilter] = useState('');
+
   const [pdiCards, setPdiCards] = useState([]);
   const [loadingPdiCards, setLoadingPdiCards] = useState(false);
   const [newPdiCardName, setNewPdiCardName] = useState('');
@@ -363,6 +371,65 @@ const PartyReallocationPlanner = () => {
   const openPartyWorkspace = (partyId) => {
     const url = `${window.location.pathname}?section=party-reallocation&partyId=${encodeURIComponent(partyId)}`;
     window.open(url, '_blank', 'noopener,noreferrer');
+  };
+
+  // Fetch barcodes from MRP using just the PDI ID
+  const fetchPdiBarcodesFromMrp = async () => {
+    const pdiId = (pdiIdInput || '').trim();
+    if (!pdiId) {
+      setPdiLookupError('Please enter a PDI ID');
+      return;
+    }
+    setPdiLookupLoading(true);
+    setPdiLookupError('');
+    setPdiLookupData(null);
+    try {
+      const resp = await fetch('https://mrp.umanerp.com/get/get_pdi_barcodes.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pdi_id: pdiId })
+      });
+      const data = await resp.json();
+      if (!resp.ok || data?.status !== 'success') {
+        throw new Error(data?.message || data?.error || 'Failed to fetch PDI barcodes');
+      }
+      setPdiLookupData({
+        pdiId,
+        pdiName: data?.pdi_details?.pdi_name || '',
+        wattage: data?.pdi_details?.wattage || '',
+        quantity: Number(data?.pdi_details?.quantity || 0),
+        barcodeCount: Number(data?.barcode_count || 0),
+        barcodes: Array.isArray(data?.barcodes) ? data.barcodes : []
+      });
+    } catch (err) {
+      setPdiLookupError(err.message || 'Failed to fetch PDI barcodes');
+    } finally {
+      setPdiLookupLoading(false);
+    }
+  };
+
+  const downloadPdiBarcodesCsv = () => {
+    if (!pdiLookupData || !pdiLookupData.barcodes.length) return;
+    const header = 'barcode\n';
+    const body = pdiLookupData.barcodes.join('\n');
+    const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `pdi_${pdiLookupData.pdiId}_barcodes.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const copyPdiBarcodesToClipboard = async () => {
+    if (!pdiLookupData || !pdiLookupData.barcodes.length) return;
+    try {
+      await navigator.clipboard.writeText(pdiLookupData.barcodes.join('\n'));
+    } catch (e) {
+      // ignore clipboard failures
+    }
   };
 
   const createNewPdiCard = async () => {
@@ -748,274 +815,76 @@ const PartyReallocationPlanner = () => {
       </div>
 
       <div className="planner-card workspace-card">
-        {!isPartyDetailMode && (
-          <>
-            <div className="workspace-header-row">
-              <h2>Party Work Cards</h2>
-              <input
-                type="text"
-                placeholder="Search party cards..."
-                value={partyCardSearch}
-                onChange={(e) => setPartyCardSearch(e.target.value)}
-                className="party-search party-card-search"
-              />
+        <div className="workspace-header-row">
+          <h2>PDI Barcode Lookup</h2>
+          <small>Source: mrp.umanerp.com / get_pdi_barcodes.php</small>
+        </div>
+
+        <div className="workspace-editor-grid">
+          <div className="workspace-field">
+            <label>PDI ID</label>
+            <input
+              type="text"
+              value={pdiIdInput}
+              onChange={(e) => setPdiIdInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') fetchPdiBarcodesFromMrp(); }}
+              placeholder="Example: 009"
+            />
+          </div>
+          <div className="workspace-field">
+            <label>&nbsp;</label>
+            <button type="button" onClick={fetchPdiBarcodesFromMrp} disabled={pdiLookupLoading}>
+              {pdiLookupLoading ? 'Fetching...' : 'Fetch Barcodes'}
+            </button>
+          </div>
+        </div>
+
+        {pdiLookupError && <p className="error">{pdiLookupError}</p>}
+
+        {pdiLookupData && (
+          <div className="workspace-editor">
+            <div className="workspace-editor-header">
+              <h3>{pdiLookupData.pdiName || `PDI ${pdiLookupData.pdiId}`}</h3>
+              <p><strong>PDI ID:</strong> {pdiLookupData.pdiId}</p>
+              <p><strong>Wattage:</strong> {pdiLookupData.wattage || '-'}</p>
+              <p><strong>Quantity:</strong> {pdiLookupData.quantity}</p>
+              <p><strong>Barcodes Returned:</strong> {pdiLookupData.barcodeCount}</p>
             </div>
 
-            <div className="party-cards-grid">
-              {partyCardsFiltered.map((party) => {
-                const workspace = partyWorkspaceMap[party.id] || {};
-                const counts = getWorkspaceCounts(workspace);
-                return (
-                  <button
-                    type="button"
-                    key={party.id}
-                    className="party-card-btn"
-                    onClick={() => openPartyWorkspace(party.id)}
-                  >
-                    <h4>{party.companyName}</h4>
-                    <p>ID: {party.id}</p>
-                    <div className="party-card-stats">
-                      <span>PDI: {counts.pdiCount}</span>
-                      <span>Running: {counts.runningCount}</span>
-                      <span>Barcode: {counts.barcodeCount}</span>
-                      <span>RFID Rows: {Number(workspace.rfidRowCount || 0)}</span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </>
-        )}
-
-        {isPartyDetailMode && activeParty && (
-          <>
-            <div className="workspace-header-row">
-              <h2>{activeParty.companyName} - PDI Cards</h2>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => { window.location.href = `${window.location.pathname}?section=party-reallocation`; }}
-              >
-                Open Party List
+            <div className="workspace-actions">
+              <button type="button" onClick={downloadPdiBarcodesCsv} disabled={!pdiLookupData.barcodes.length}>
+                Download CSV
+              </button>
+              <button type="button" className="secondary" onClick={copyPdiBarcodesToClipboard} disabled={!pdiLookupData.barcodes.length}>
+                Copy All
               </button>
             </div>
 
-            <div className="workspace-editor-grid pdi-card-create-row">
+            <div className="workspace-editor-grid">
               <div className="workspace-field">
-                <label>Create New PDI Card</label>
+                <label>Filter Barcodes</label>
                 <input
                   type="text"
-                  value={newPdiCardName}
-                  onChange={(e) => setNewPdiCardName(e.target.value)}
-                  placeholder="Example: 1 or PDI-1"
+                  value={pdiBarcodeFilter}
+                  onChange={(e) => setPdiBarcodeFilter(e.target.value)}
+                  placeholder="Type to filter..."
                 />
               </div>
-              <div className="workspace-field pdi-create-btn-wrap">
-                <label>&nbsp;</label>
-                <button type="button" onClick={createNewPdiCard}>Create New PDI</button>
-              </div>
             </div>
 
-            {loadingPdiCards && <p className="info">Loading PDI cards...</p>}
-
-            <div className="party-cards-grid">
-              {pdiCards.map((card, index) => {
-                const isActive = (card.pdiKey || '') === activePdiKey;
-                const counts = card.counts || {};
-                return (
-                  <button
-                    type="button"
-                    key={card.pdiKey || `pdi-${index}`}
-                    className={`party-card-btn ${isActive ? 'active' : ''}`}
-                    onClick={() => setActivePdiKey(card.pdiKey || '')}
-                  >
-                    <h4>PDI Card: {card.pdiNumber || card.pdiKey}</h4>
-                    <p>Key: {card.pdiKey}</p>
-                    <div className="party-card-stats">
-                      <span>PDI: {Number(counts.pdi || 0)}</span>
-                      <span>Running: {Number(counts.runningOrder || 0)}</span>
-                      <span>Barcode: {Number(counts.barcode || 0)}</span>
-                      <span>Reject: {Number(counts.rejection || 0)}</span>
-                      <span>RFID: {Number(card.rfidRowCount || 0)}</span>
-                    </div>
-                  </button>
-                );
-              })}
+            <div className="compare-list-box" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              <h5>Barcodes ({pdiLookupData.barcodes.filter((b) => !pdiBarcodeFilter || String(b).toLowerCase().includes(pdiBarcodeFilter.toLowerCase())).length} shown)</h5>
+              <ul>
+                {pdiLookupData.barcodes
+                  .filter((b) => !pdiBarcodeFilter || String(b).toLowerCase().includes(pdiBarcodeFilter.toLowerCase()))
+                  .slice(0, 1000)
+                  .map((b, i) => <li key={`bc-${i}-${b}`}>{b}</li>)}
+              </ul>
+              {pdiLookupData.barcodes.length > 1000 && (
+                <p className="info">Showing first 1000. Use filter or download CSV for full list.</p>
+              )}
             </div>
-
-            {!activePdiKey && <p className="info">Create or select a PDI card to upload data.</p>}
-
-            {activePdiKey && (
-              <div className="workspace-editor">
-                <div className="workspace-editor-header">
-                  <h3>{activeParty.companyName}</h3>
-                  <p>Party ID: {activeParty.id}</p>
-                  <p><strong>PDI Card:</strong> {activePdiKey}</p>
-                  <p><strong>PDI Number:</strong> {editorPdiNumber || '-'}</p>
-                  <p><strong>Running Order Number:</strong> {editorRunningOrderNumber || '-'}</p>
-                  <p><strong>RFID Rows:</strong> {rfidRowCount}</p>
-                  {rfidUploadedAt && <p><strong>RFID Uploaded:</strong> {new Date(rfidUploadedAt).toLocaleString()}</p>}
-                  {workspaceSavedAt && <p>Last saved: {new Date(workspaceSavedAt).toLocaleString()}</p>}
-                </div>
-
-                <div className="workspace-editor-grid">
-                  <div className="workspace-field">
-                    <label>PDI Number (Create Time)</label>
-                    <input
-                      type="text"
-                      value={editorPdiNumber}
-                      onChange={(e) => setEditorPdiNumber(e.target.value)}
-                      placeholder="Enter PDI number"
-                    />
-                  </div>
-                  <div className="workspace-field">
-                    <label>Running Order Number (Create Time)</label>
-                    <input
-                      type="text"
-                      value={editorRunningOrderNumber}
-                      onChange={(e) => setEditorRunningOrderNumber(e.target.value)}
-                      placeholder="Enter running order number"
-                    />
-                  </div>
-                </div>
-
-                <div className="workspace-editor-grid">
-                  <div className="workspace-field">
-                    <label>OK Barcodes</label>
-                    <textarea
-                      value={editorPdi}
-                      onChange={(e) => setEditorPdi(e.target.value)}
-                      placeholder="Paste OK barcodes. Separator: new line, comma, space"
-                      rows={8}
-                    />
-                  </div>
-
-                  <div className="workspace-field">
-                    <label>Running Order Serials</label>
-                    <textarea
-                      value={editorRunningOrder}
-                      onChange={(e) => setEditorRunningOrder(e.target.value)}
-                      placeholder="Paste running order serials"
-                      rows={8}
-                    />
-                  </div>
-
-                  <div className="workspace-field">
-                    <label>Barcode Serials</label>
-                    <textarea
-                      value={editorBarcode}
-                      onChange={(e) => setEditorBarcode(e.target.value)}
-                      placeholder="Paste / update barcode serials"
-                      rows={8}
-                    />
-                  </div>
-
-                  <div className="workspace-field">
-                    <label>Rejection Barcodes</label>
-                    <textarea
-                      value={editorRejection}
-                      onChange={(e) => setEditorRejection(e.target.value)}
-                      placeholder="Paste rejected module serials"
-                      rows={8}
-                    />
-                  </div>
-
-                  <div className="workspace-field">
-                    <label>SMT Module Serials</label>
-                    <textarea
-                      value={editorSmtModule}
-                      onChange={(e) => setEditorSmtModule(e.target.value)}
-                      placeholder="Paste SMT/module serials"
-                      rows={8}
-                    />
-                  </div>
-                </div>
-
-                <div className="workspace-editor-grid">
-                  <div className="workspace-field">
-                    <label>RFID Excel Upload (.xlsx/.xls)</label>
-                    <input
-                      type="file"
-                      accept=".xlsx,.xls"
-                      onChange={(e) => setRfidExcelFile(e.target.files?.[0] || null)}
-                    />
-                    <small>
-                      Required columns: Date, ID, Pmax, Isc, Voc, Ipm, Vpm, FF, Rs, Rsh, Eff, T_Object,
-                      T_Target, Irr_Target, Class, Sweep_Time, Irr_MonCell, Isc_MonCell, T_MonCell,
-                      T_Ambient, Binning
-                    </small>
-                  </div>
-                </div>
-
-                <div className="workspace-actions">
-                  <button type="button" onClick={savePartyWorkspace} disabled={savingWorkspace || loadingWorkspace}>
-                    {savingWorkspace ? 'Saving...' : 'Save Party Data'}
-                  </button>
-                  <button type="button" onClick={uploadRfidExcel} disabled={uploadingRfid || loadingWorkspace || savingWorkspace}>
-                    {uploadingRfid ? 'Uploading RFID...' : 'Upload RFID Excel'}
-                  </button>
-                  <button type="button" className="secondary" onClick={clearActivePartyWorkspace} disabled={savingWorkspace || loadingWorkspace}>
-                    Clear This PDI
-                  </button>
-                </div>
-                {loadingWorkspace && <p className="info">Loading PDI workspace...</p>}
-
-                <div className="workspace-compare-grid">
-                  <div className="result-card">
-                    <h4>Totals</h4>
-                    <p>PDI: {comparison.totals.pdi}</p>
-                    <p>Running: {comparison.totals.running}</p>
-                    <p>Barcode: {comparison.totals.barcode}</p>
-                    <p>Rejection: {comparison.totals.rejection}</p>
-                    <p>SMT: {comparison.totals.smtModule}</p>
-                  </div>
-
-                  <div className="result-card">
-                    <h4>Matches</h4>
-                    <p>PDI and Running match: {comparison.totals.matchedPdiRunning}</p>
-                    <p>PDI and Barcode match: {comparison.totals.matchedPdiBarcode}</p>
-                    <p>Rejected also in PDI: {comparison.totals.rejectedAlsoInPdi}</p>
-                  </div>
-
-                  <div className="result-card highlight">
-                    <h4>Gaps</h4>
-                    <p>PDI - Running: {comparison.pdiOnly.length}</p>
-                    <p>Running - PDI: {comparison.runningOnly.length}</p>
-                    <p>Barcode - PDI: {comparison.barcodeOnly.length}</p>
-                    <p>PDI - Barcode: {comparison.pdiNotInBarcode.length}</p>
-                    <p>SMT - PDI: {comparison.smtNotInPdi.length}</p>
-                  </div>
-                </div>
-
-                <div className="compare-lists-grid">
-                  <div className="compare-list-box">
-                    <h5>PDI - Running (Top 30)</h5>
-                    <ul>
-                      {comparison.pdiOnly.slice(0, 30).map((x) => <li key={`pdiOnly-${x}`}>{x}</li>)}
-                    </ul>
-                  </div>
-                  <div className="compare-list-box">
-                    <h5>Running - PDI (Top 30)</h5>
-                    <ul>
-                      {comparison.runningOnly.slice(0, 30).map((x) => <li key={`runningOnly-${x}`}>{x}</li>)}
-                    </ul>
-                  </div>
-                  <div className="compare-list-box">
-                    <h5>Barcode - PDI (Top 30)</h5>
-                    <ul>
-                      {comparison.barcodeOnly.slice(0, 30).map((x) => <li key={`barcodeOnly-${x}`}>{x}</li>)}
-                    </ul>
-                  </div>
-                  <div className="compare-list-box">
-                    <h5>SMT - PDI (Top 30)</h5>
-                    <ul>
-                      {comparison.smtNotInPdi.slice(0, 30).map((x) => <li key={`smtNotInPdi-${x}`}>{x}</li>)}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+          </div>
         )}
       </div>
 

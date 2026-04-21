@@ -578,3 +578,63 @@
 }
 .status-table-scroll th { background: #eef4fc; position: sticky; top: 0; }
 .status-table-scroll td.empty { text-align: center; color: #8aa0bd; padding: 14px; }
+
+/* Status toolbar (search + download buttons) */
+.status-toolbar {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin: 12px 0;
+}
+.status-toolbar input[type="text"] {
+  flex: 1 1 240px; min-width: 200px;
+  padding: 8px 12px; border: 1px solid #cfd8e3; border-radius: 8px;
+  font-size: 13px;
+}
+.status-toolbar button {
+  padding: 8px 12px; border: 1px solid #cfd8e3; border-radius: 8px;
+  background: #fff; color: #16324f; font-weight: 600; cursor: pointer;
+  font-size: 12px;
+}
+.status-toolbar button:hover { background: #eef4fc; border-color: #9ab8dc; }
+
+/* Actual PDI upload box */
+.actual-pdi-box {
+  margin-top: 18px; padding: 14px 16px;
+  border: 1px dashed #9ab8dc; border-radius: 12px;
+  background: #f4f9ff;
+}
+.actual-pdi-head h4 { margin: 0 0 4px; color: #16324f; }
+.actual-pdi-head p { margin: 0 0 10px; font-size: 12px; color: #4f6581; }
+.actual-pdi-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.actual-pdi-actions button {
+  padding: 8px 14px; border: 1px solid #9ab8dc; border-radius: 8px;
+  background: #fff; color: #16324f; font-weight: 600; cursor: pointer;
+}
+.actual-pdi-actions button:hover { background: #eef4fc; }
+.actual-pdi-actions button.primary { background: #2c6bbf; color: #fff; border-color: #2c6bbf; }
+.actual-pdi-actions button.primary:hover { background: #1f549c; }
+.actual-pdi-actions button:disabled { opacity: 0.5; cursor: not-allowed; }
+.actual-pdi-actions .muted { font-size: 12px; color: #6c7a8c; }
+
+/* Compare panel */
+.actual-compare-panel {
+  margin-top: 18px; padding: 14px 16px;
+  border: 1px solid #cfe0f5; border-radius: 12px;
+  background: #fbfdff;
+}
+.actual-compare-panel > h4 { margin: 0 0 8px; color: #16324f; }
+.actual-compare-panel > p { margin: 0 0 12px; font-size: 12px; color: #4f6581; }
+
+/* Helper classes */
+.pdi-status-panel p.info {
+  padding: 8px 12px; background: #fff8e6; border: 1px solid #f1d28e;
+  border-radius: 8px; color: #6a4b00; font-size: 12px; margin: 8px 0;
+}
+.pdi-status-panel p.error {
+  padding: 8px 12px; background: #fdecec; border: 1px solid #f1a9a9;
+  border-radius: 8px; color: #8c1f1f; font-size: 12px; margin: 8px 0;
+}
+.status-table-scroll td.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px; color: #2c3e50;
+  max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}

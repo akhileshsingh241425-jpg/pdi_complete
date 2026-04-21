@@ -73,14 +73,12 @@ const BulkFTRGenerator = () => {
         let timeVal = getValue(row, 'Time', 'time') || '';
         
         if (typeof dateVal === 'number' && dateVal > 40000) {
-          // Excel Julian date (may include time as decimal)
+          // Excel Julian date - only extract date portion.
+          // Time is intentionally NOT derived from decimal so UI Time Range
+          // controls the report time when no explicit Time column exists.
           const excelEpoch = new Date(1899, 11, 30);
           const date = new Date(excelEpoch.getTime() + dateVal * 86400000);
           dateVal = date.toISOString().split('T')[0];
-          // Extract time if it was part of the decimal
-          if (!timeVal) {
-            timeVal = date.toTimeString().split(' ')[0]; // HH:MM:SS
-          }
         } else if (typeof dateVal === 'string' && dateVal.includes(' ')) {
           // Date string with time like "1/28/2026 17:05"
           const parts = dateVal.split(' ');
@@ -374,8 +372,29 @@ const BulkFTRGenerator = () => {
         const i = batchStart + indexInBatch;
       
       // Map Excel data to testData format (data is already normalized)
-      // Use pre-generated time if Excel doesn't have time
-      const assignedTime = row.Time || generatedTimes[i] || startTime;
+      // If Excel has a real Time column use it, otherwise use the UI-generated
+      // 24hr time derived from the Date & Time Range inputs.
+      const to24Hr = (t) => {
+        if (!t) return '';
+        const s = String(t).trim();
+        // AM/PM -> 24hr
+        const ampm = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)$/i);
+        if (ampm) {
+          let h = parseInt(ampm[1], 10) % 12;
+          if (ampm[4].toUpperCase() === 'PM') h += 12;
+          return `${String(h).padStart(2,'0')}:${ampm[2]}:${ampm[3] || '00'}`;
+        }
+        // HH:MM or HH:MM:SS already 24hr
+        const parts = s.split(':');
+        if (parts.length >= 2) {
+          const h = String(parseInt(parts[0],10)||0).padStart(2,'0');
+          const m = parts[1].padStart(2,'0');
+          const sec = (parts[2] || '00').padStart(2,'0');
+          return `${h}:${m}:${sec}`;
+        }
+        return '';
+      };
+      const assignedTime = to24Hr(row.Time) || generatedTimes[i] || startTime;
       
       const testData = {
         producer: row.Producer || 'Gautam Solar',

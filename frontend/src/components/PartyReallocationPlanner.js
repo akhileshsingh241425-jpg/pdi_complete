@@ -1,4 +1,5 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+﻿import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as XLSX from 'xlsx';
 import '../styles/PartyReallocationPlanner.css';
 
 const API_BASE_URL = window.location.hostname === 'localhost'
@@ -226,6 +227,15 @@ const PartyReallocationPlanner = () => {
   const [pdiStatusError, setPdiStatusError] = useState('');
   const [pdiStatusData, setPdiStatusData] = useState(null);
   const [pdiStatusActiveId, setPdiStatusActiveId] = useState('');
+  const [statusSearch, setStatusSearch] = useState('');
+
+  // Actual PDI compare
+  const [actualFileName, setActualFileName] = useState('');
+  const [actualBarcodes, setActualBarcodes] = useState([]);
+  const [actualCompareLoading, setActualCompareLoading] = useState(false);
+  const [actualCompareError, setActualCompareError] = useState('');
+  const [actualCompareData, setActualCompareData] = useState(null);
+  const actualFileRef = useRef(null);
 
   const [pdiCards, setPdiCards] = useState([]);
   const [loadingPdiCards, setLoadingPdiCards] = useState(false);
@@ -538,6 +548,99 @@ const PartyReallocationPlanner = () => {
     setPdiStatusActiveId('');
     setPdiStatusData(null);
     setPdiStatusError('');
+    setActualCompareData(null);
+    setActualCompareError('');
+    setActualBarcodes([]);
+    setActualFileName('');
+  };
+
+  // ---- Actual PDI upload + compare ----
+  const handleActualFile = async (file) => {
+    if (!file) return;
+    setActualCompareError('');
+    setActualCompareData(null);
+    setActualFileName(file.name);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+      // Flatten all cells, pick candidates that look like serial numbers
+      const bag = new Set();
+      for (const row of rows) {
+        for (const cell of row) {
+          const v = String(cell || '').trim();
+          if (v && v.length >= 6 && /^[A-Za-z0-9\-_/]+$/.test(v)) {
+            bag.add(v.toUpperCase());
+          }
+        }
+      }
+      // If there's a column named "serial" / "barcode", prefer that
+      if (rows.length > 1) {
+        const header = rows[0].map((h) => String(h || '').toLowerCase().trim());
+        const col = header.findIndex((h) => h === 'serial' || h === 'serial_number' || h === 'barcode' || h === 'module_id' || h === 'module' || h === 'sr no');
+        if (col >= 0) {
+          bag.clear();
+          for (let i = 1; i < rows.length; i++) {
+            const v = String(rows[i][col] || '').trim();
+            if (v) bag.add(v.toUpperCase());
+          }
+        }
+      }
+      setActualBarcodes(Array.from(bag));
+    } catch (err) {
+      setActualCompareError('Failed to parse file: ' + (err.message || err));
+    }
+  };
+
+  const runActualCompare = async () => {
+    if (!pdiStatusActiveId) {
+      setActualCompareError('Select a PDI first');
+      return;
+    }
+    const partyId = detailPartyId || activePartyId;
+    if (!partyId) {
+      setActualCompareError('Party ID missing');
+      return;
+    }
+    if (!actualBarcodes.length) {
+      setActualCompareError('Upload actual PDI file first');
+      return;
+    }
+    setActualCompareLoading(true);
+    setActualCompareError('');
+    setActualCompareData(null);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-actual-compare`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          pdi_id: pdiStatusActiveId,
+          party_id: partyId,
+          actual_barcodes: actualBarcodes
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error || 'Compare failed');
+      }
+      setActualCompareData(data);
+    } catch (err) {
+      setActualCompareError(err.message || 'Compare failed');
+    } finally {
+      setActualCompareLoading(false);
+    }
+  };
+
+  const downloadSerialsCsv = (name, serials) => {
+    if (!serials || !serials.length) return;
+    const blob = new Blob(['serial\n' + serials.join('\n')], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${name}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const downloadPdiBarcodesCsv = () => {
@@ -975,7 +1078,8 @@ const PartyReallocationPlanner = () => {
                 <p>
                   <strong>PDI ID:</strong> {pdiStatusData.pdi?.id} &nbsp;|&nbsp;
                   <strong>Wattage:</strong> {pdiStatusData.pdi?.wattage || '-'}W &nbsp;|&nbsp;
-                  <strong>Plan Qty:</strong> {pdiStatusData.pdi?.quantity}
+                  <strong>Plan Qty:</strong> {pdiStatusData.pdi?.quantity} &nbsp;|&nbsp;
+                  <strong>Total kW:</strong> {pdiStatusData.pdi?.total_kw || 0}
                 </p>
               </div>
               <button type="button" className="back-btn" onClick={closePdiStatus}>Close</button>
@@ -992,29 +1096,45 @@ const PartyReallocationPlanner = () => {
                 <div className="status-card-value">{pdiStatusData.summary?.dispatched || 0}</div>
                 <div className="status-card-sub">{pdiStatusData.summary?.dispatched_percent || 0}%</div>
               </div>
+              <div className="status-card status-packed">
+                <div className="status-card-label">Packed (not dispatched)</div>
+                <div className="status-card-value">{pdiStatusData.summary?.packed || 0}</div>
+                <div className="status-card-sub">{pdiStatusData.summary?.packed_percent || 0}%</div>
+              </div>
               <div className="status-card status-pending">
-                <div className="status-card-label">Not Dispatched</div>
+                <div className="status-card-label">Not Packed</div>
                 <div className="status-card-value">{pdiStatusData.summary?.pending || 0}</div>
                 <div className="status-card-sub">{pdiStatusData.summary?.pending_percent || 0}%</div>
               </div>
               <div className="status-card status-tracked">
                 <div className="status-card-label">Party Universe</div>
                 <div className="status-card-value">{pdiStatusData.summary?.party_dispatch_universe || 0}</div>
-                <div className="status-card-sub">All dispatched barcodes of this party</div>
+                <div className="status-card-sub">All party dispatched</div>
               </div>
             </div>
 
+            {pdiStatusData.summary?.pack_skipped_due_to_cap > 0 && (
+              <p className="info">
+                Note: {pdiStatusData.summary.pack_skipped_due_to_cap} barcodes ka packing check skip hua (cap {pdiStatusData.summary.pack_check_capped_at}). Exact packed count ke liye <code>?pack_cap=10000</code> pass karo.
+              </p>
+            )}
+
             <div className="status-progress">
-              <div
-                className="status-progress-fill dispatched"
-                style={{ width: `${pdiStatusData.summary?.dispatched_percent || 0}%` }}
-                title={`Dispatched ${pdiStatusData.summary?.dispatched_percent || 0}%`}
+              <div className="status-progress-fill dispatched" style={{ width: `${pdiStatusData.summary?.dispatched_percent || 0}%` }} title={`Dispatched ${pdiStatusData.summary?.dispatched_percent || 0}%`} />
+              <div className="status-progress-fill packed" style={{ width: `${pdiStatusData.summary?.packed_percent || 0}%` }} title={`Packed ${pdiStatusData.summary?.packed_percent || 0}%`} />
+              <div className="status-progress-fill pending" style={{ width: `${pdiStatusData.summary?.pending_percent || 0}%` }} title={`Pending ${pdiStatusData.summary?.pending_percent || 0}%`} />
+            </div>
+
+            <div className="status-toolbar">
+              <input
+                type="text"
+                placeholder="Search barcode / vehicle / pallet..."
+                value={statusSearch}
+                onChange={(e) => setStatusSearch(e.target.value)}
               />
-              <div
-                className="status-progress-fill pending"
-                style={{ width: `${pdiStatusData.summary?.pending_percent || 0}%` }}
-                title={`Pending ${pdiStatusData.summary?.pending_percent || 0}%`}
-              />
+              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-dispatched`, pdiStatusData.all_dispatched)}>Download Dispatched CSV</button>
+              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-packed`, pdiStatusData.all_packed)}>Download Packed CSV</button>
+              <button type="button" onClick={() => downloadSerialsCsv(`pdi-${pdiStatusData.pdi?.id}-pending`, pdiStatusData.all_pending)}>Download Pending CSV</button>
             </div>
 
             <div className="status-tables">
@@ -1024,8 +1144,10 @@ const PartyReallocationPlanner = () => {
                   <table>
                     <thead><tr><th>Vehicle</th><th>Date</th><th>Invoice</th><th>Modules</th><th>Pallets</th></tr></thead>
                     <tbody>
-                      {(pdiStatusData.dispatch_groups || []).map((g) => (
-                        <tr key={`v-${g.vehicle_no}-${g.dispatch_date}`}>
+                      {(pdiStatusData.dispatch_groups || [])
+                        .filter((g) => !statusSearch || JSON.stringify(g).toLowerCase().includes(statusSearch.toLowerCase()))
+                        .map((g) => (
+                        <tr key={`v-${g.vehicle_no}-${g.dispatch_date}-${g.invoice_no}`}>
                           <td>{g.vehicle_no}</td>
                           <td>{g.dispatch_date || '-'}</td>
                           <td>{g.invoice_no || '-'}</td>
@@ -1047,7 +1169,9 @@ const PartyReallocationPlanner = () => {
                   <table>
                     <thead><tr><th>Pallet</th><th>Vehicle</th><th>Date</th><th>Modules</th></tr></thead>
                     <tbody>
-                      {(pdiStatusData.pallet_groups || []).map((p) => (
+                      {(pdiStatusData.pallet_groups || [])
+                        .filter((p) => !statusSearch || JSON.stringify(p).toLowerCase().includes(statusSearch.toLowerCase()))
+                        .map((p) => (
                         <tr key={`p-${p.pallet_no}`}>
                           <td>{p.pallet_no}</td>
                           <td>{p.vehicle_no || '-'}</td>
@@ -1063,6 +1187,130 @@ const PartyReallocationPlanner = () => {
                 </div>
               </div>
             </div>
+
+            {/* Actual PDI Upload & Compare */}
+            <div className="actual-pdi-box">
+              <div className="actual-pdi-head">
+                <div>
+                  <h4>Actual PDI Compare</h4>
+                  <p>Customer ke saath jo actually PDI hui uski barcode list (Excel / CSV) upload karo. System batayega kya match hua, kya missing hai, aur extras kis PDI/RO ke hain.</p>
+                </div>
+              </div>
+              <div className="actual-pdi-actions">
+                <input
+                  ref={actualFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleActualFile(e.target.files?.[0])}
+                />
+                <button type="button" onClick={() => actualFileRef.current?.click()}>
+                  {actualFileName ? `File: ${actualFileName}` : 'Choose Excel / CSV'}
+                </button>
+                <span className="muted">
+                  {actualBarcodes.length ? `${actualBarcodes.length} barcodes parsed` : 'No file chosen'}
+                </span>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={runActualCompare}
+                  disabled={!actualBarcodes.length || actualCompareLoading}
+                >
+                  {actualCompareLoading ? 'Comparing...' : 'Compare with Planned PDI'}
+                </button>
+              </div>
+              {actualCompareError && <p className="error">{actualCompareError}</p>}
+            </div>
+
+            {actualCompareData && (
+              <div className="actual-compare-panel">
+                <h4>Comparison Result - {actualCompareData.pdi?.name}</h4>
+                <p>
+                  <strong>Planned:</strong> {actualCompareData.summary?.planned} &nbsp;|&nbsp;
+                  <strong>Actual:</strong> {actualCompareData.summary?.actual_uploaded} &nbsp;|&nbsp;
+                  <strong>Variance:</strong> {actualCompareData.summary?.variance_percent}% &nbsp;|&nbsp;
+                  <strong>Planned kW:</strong> {actualCompareData.pdi?.planned_kw} &nbsp;|&nbsp;
+                  <strong>Actual kW:</strong> {actualCompareData.pdi?.actual_kw}
+                </p>
+
+                <div className="status-cards-grid">
+                  <div className="status-card status-dispatched">
+                    <div className="status-card-label">Matched (in plan & actual)</div>
+                    <div className="status-card-value">{actualCompareData.summary?.matched}</div>
+                  </div>
+                  <div className="status-card status-packed">
+                    <div className="status-card-label">Extras (actual but not planned)</div>
+                    <div className="status-card-value">{actualCompareData.summary?.extras}</div>
+                  </div>
+                  <div className="status-card status-pending">
+                    <div className="status-card-label">Missing (planned but not delivered)</div>
+                    <div className="status-card-value">{actualCompareData.summary?.missing}</div>
+                  </div>
+                  <div className="status-card status-total">
+                    <div className="status-card-label">Actual Dispatched</div>
+                    <div className="status-card-value">{actualCompareData.summary?.actual_dispatched}</div>
+                  </div>
+                  <div className="status-card status-tracked">
+                    <div className="status-card-label">Actual Packed</div>
+                    <div className="status-card-value">{actualCompareData.summary?.actual_packed}</div>
+                  </div>
+                  <div className="status-card status-unknown">
+                    <div className="status-card-label">Actual Not Packed</div>
+                    <div className="status-card-value">{actualCompareData.summary?.actual_pending}</div>
+                  </div>
+                </div>
+
+                <div className="status-tables">
+                  <div className="status-table-block">
+                    <h4>Extras - Source PDI (kis PDI ke barcode extra aaye)</h4>
+                    <div className="status-table-scroll">
+                      <table>
+                        <thead><tr><th>Source PDI</th><th>Count</th><th>Sample Serials</th></tr></thead>
+                        <tbody>
+                          {(actualCompareData.extras_breakdown || []).map((g, i) => (
+                            <tr key={`ex-${g.pdi_id || 'unk'}-${i}`}>
+                              <td>{g.pdi_name}</td>
+                              <td>{g.count}</td>
+                              <td className="mono" title={g.serials_sample.join(', ')}>{g.serials_sample.slice(0, 3).join(', ')}{g.serials_sample.length > 3 ? '...' : ''}</td>
+                            </tr>
+                          ))}
+                          {!(actualCompareData.extras_breakdown || []).length && (
+                            <tr><td colSpan={3} className="empty">No extras</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  <div className="status-table-block">
+                    <h4>Missing - Found in Other PDIs</h4>
+                    <div className="status-table-scroll">
+                      <table>
+                        <thead><tr><th>Other PDI</th><th>Count</th><th>Sample</th></tr></thead>
+                        <tbody>
+                          {(actualCompareData.missing_in_other_pdis || []).map((g, i) => (
+                            <tr key={`mo-${g.pdi_id}-${i}`}>
+                              <td>{g.pdi_name || `PDI ${g.pdi_id}`}</td>
+                              <td>{g.count}</td>
+                              <td className="mono">{g.serials_sample.slice(0, 3).join(', ')}</td>
+                            </tr>
+                          ))}
+                          {!(actualCompareData.missing_in_other_pdis || []).length && (
+                            <tr><td colSpan={3} className="empty">None</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="status-toolbar">
+                  <button type="button" onClick={() => downloadSerialsCsv('matched', actualCompareData.matched_sample || [])}>Matched CSV</button>
+                  <button type="button" onClick={() => downloadSerialsCsv('missing', actualCompareData.missing_sample || [])}>Missing CSV</button>
+                  <button type="button" onClick={() => downloadSerialsCsv('extras', actualCompareData.extras_sample || [])}>Extras CSV</button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

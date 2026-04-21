@@ -2804,7 +2804,74 @@ def pdi_status(pdi_id):
 
     # ===== 3. Intersect =====
     dispatched_set = pdi_barcode_set & set(mrp_lookup.keys())
-    pending_set = pdi_barcode_set - dispatched_set
+    not_dispatched_set = pdi_barcode_set - dispatched_set
+
+    # ===== 3b. Detect packed (not dispatched) via per-barcode tracking API =====
+    # Cache per barcode for 30 min to avoid re-hitting upstream
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    PACK_CAP = int(request.args.get('pack_cap', 3000))
+    pack_cache = pdi_status.__dict__.setdefault('_pack_cache', {})
+    PACK_TTL = 1800
+
+    packed_set = set()
+    pending_set = set()
+    packed_info = {}
+    pack_unknown = 0
+
+    not_disp_list = list(not_dispatched_set)
+    to_check = []
+    for s in not_disp_list[:PACK_CAP]:
+        entry = pack_cache.get(s)
+        if entry and (now - entry['t']) < PACK_TTL:
+            if entry['status'] == 'packed':
+                packed_set.add(s)
+                packed_info[s] = entry.get('info') or {}
+            else:
+                pending_set.add(s)
+        else:
+            to_check.append(s)
+
+    def _check_pack(serial):
+        try:
+            r = http_requests.post(
+                'https://umanmrp.in/api/get_barcode_tracking.php',
+                data={'barcode': serial}, timeout=8
+            )
+            if r.status_code != 200:
+                return ('unknown', serial, None)
+            d = r.json()
+            if not d.get('success') or not d.get('data'):
+                return ('pending', serial, None)
+            pack = (d['data'] or {}).get('packing') or {}
+            if pack.get('packing_date'):
+                return ('packed', serial, {
+                    'packing_date': pack.get('packing_date'),
+                    'box_no': pack.get('box_no', ''),
+                    'pallet_no': pack.get('pallet_no', '')
+                })
+            return ('pending', serial, None)
+        except Exception:
+            return ('unknown', serial, None)
+
+    if to_check:
+        with ThreadPoolExecutor(max_workers=30) as ex:
+            for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
+                status, serial, info = f.result()
+                if status == 'packed':
+                    packed_set.add(serial)
+                    packed_info[serial] = info or {}
+                    pack_cache[serial] = {'t': now, 'status': 'packed', 'info': info}
+                elif status == 'pending':
+                    pending_set.add(serial)
+                    pack_cache[serial] = {'t': now, 'status': 'pending'}
+                else:
+                    pack_unknown += 1
+
+    # Anything beyond cap counted as unknown_pack
+    skipped_pack_check = max(0, len(not_disp_list) - PACK_CAP)
+    if skipped_pack_check:
+        # treat skipped as pending (best guess) — UI shows the cap
+        pending_set.update(not_disp_list[PACK_CAP:])
 
     # Group dispatched by vehicle and pallet
     vehicle_map = {}
@@ -2858,9 +2925,17 @@ def pdi_status(pdi_id):
     pallet_groups = sorted(pallet_map.values(), key=lambda x: str(x['pallet_no']))
 
     dispatched = len(dispatched_set)
+    packed = len(packed_set)
     pending = len(pending_set)
     dispatched_pct = round((dispatched / total_pdi * 100), 1) if total_pdi else 0
+    packed_pct = round((packed / total_pdi * 100), 1) if total_pdi else 0
     pending_pct = round((pending / total_pdi * 100), 1) if total_pdi else 0
+
+    try:
+        wattage_num = float(pdi_details.get('wattage') or 0)
+    except Exception:
+        wattage_num = 0
+    total_kw = round((wattage_num * total_pdi) / 1000.0, 2)
 
     payload = {
         "success": True,
@@ -2869,24 +2944,300 @@ def pdi_status(pdi_id):
             "id": pdi_id,
             "name": pdi_details.get('pdi_name', ''),
             "wattage": pdi_details.get('wattage', ''),
-            "quantity": int(pdi_details.get('quantity') or 0)
+            "quantity": int(pdi_details.get('quantity') or 0),
+            "total_kw": total_kw
         },
         "party_id": party_id,
         "summary": {
             "total_barcodes": total_pdi,
             "dispatched": dispatched,
+            "packed": packed,
             "pending": pending,
             "dispatched_percent": dispatched_pct,
+            "packed_percent": packed_pct,
             "pending_percent": pending_pct,
-            "party_dispatch_universe": len(mrp_lookup)
+            "party_dispatch_universe": len(mrp_lookup),
+            "pack_check_capped_at": PACK_CAP,
+            "pack_skipped_due_to_cap": skipped_pack_check,
+            "pack_unknown": pack_unknown
         },
         "dispatch_groups": dispatch_groups,
         "pallet_groups": pallet_groups,
-        "pending_sample": list(pending_set)[:50]
+        "packed_sample": [{
+            "serial": s,
+            "packing_date": (packed_info.get(s) or {}).get('packing_date', ''),
+            "box_no": (packed_info.get(s) or {}).get('box_no', ''),
+            "pallet_no": (packed_info.get(s) or {}).get('pallet_no', '')
+        } for s in list(packed_set)[:200]],
+        "pending_sample": list(pending_set)[:200],
+        "all_dispatched": sorted(dispatched_set),
+        "all_packed": sorted(packed_set),
+        "all_pending": sorted(pending_set)
     }
 
     cache[cache_key] = {"timestamp": now, "data": payload}
     return jsonify(payload)
+
+
+@ftr_bp.route('/pdi-actual-compare', methods=['POST'])
+def pdi_actual_compare():
+    """Compare actual PDI barcodes (uploaded by user) against:
+      - the planned PDI barcodes (this pdi_id)
+      - all other PDIs of the same party (to identify extras)
+      - party dispatch history (dispatched vs not)
+
+    Request JSON:
+        {
+          "pdi_id": "76",
+          "party_id": "<uuid>",
+          "actual_barcodes": ["GS04...", ...]
+        }
+
+    Returns per-PDI breakdown + matched/missing/extras + dispatched/packed status.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    try:
+        body = request.get_json(silent=True) or {}
+        pdi_id = str(body.get('pdi_id') or '').strip()
+        party_id = str(body.get('party_id') or '').strip()
+        actual_raw = body.get('actual_barcodes') or []
+        if not pdi_id or not party_id:
+            return jsonify({"success": False, "error": "pdi_id and party_id required"}), 400
+        if not isinstance(actual_raw, list):
+            return jsonify({"success": False, "error": "actual_barcodes must be a list"}), 400
+
+        actual_set = {str(b).strip().upper() for b in actual_raw if str(b).strip()}
+
+        # 1. All PDIs of this party
+        pdi_list_resp = http_requests.post(
+            'https://umanmrp.in/get/get_all_pdi.php',
+            json={"party_name_id": party_id},
+            timeout=60
+        )
+        pdi_list_json = pdi_list_resp.json() if pdi_list_resp.status_code == 200 else {}
+        all_pdis = pdi_list_json.get('data') or []
+
+        # 2. Fetch barcodes of EACH pdi in parallel; cache (reuse pdi_status pack_cache-like cache)
+        pdi_bc_cache = pdi_actual_compare.__dict__.setdefault('_pdi_bc_cache', {})
+        now = time.time()
+
+        def _fetch_pdi_barcodes(pid):
+            ent = pdi_bc_cache.get(pid)
+            if ent and (now - ent['t']) < 600:
+                return pid, ent['barcodes'], ent['details']
+            try:
+                r = http_requests.post(
+                    'https://mrp.umanerp.com/get/get_pdi_barcodes.php',
+                    json={"pdi_id": str(pid)}, timeout=120
+                )
+                d = r.json() if r.status_code == 200 else {}
+                bcs = [str(x).strip().upper() for x in (d.get('barcodes') or []) if str(x).strip()]
+                det = d.get('pdi_details') or {}
+                pdi_bc_cache[pid] = {'t': now, 'barcodes': bcs, 'details': det}
+                return pid, bcs, det
+            except Exception:
+                return pid, [], {}
+
+        pdi_barcode_map = {}   # pid -> set
+        pdi_detail_map = {}    # pid -> {pdi_name, wattage, quantity}
+        serial_to_pdi = {}     # barcode -> pid
+
+        with ThreadPoolExecutor(max_workers=8) as ex:
+            futures = [ex.submit(_fetch_pdi_barcodes, item.get('id')) for item in all_pdis if item.get('id')]
+            for f in as_completed(futures):
+                pid, bcs, det = f.result()
+                s = set(bcs)
+                pdi_barcode_map[str(pid)] = s
+                pdi_detail_map[str(pid)] = {
+                    'pdi_name': det.get('pdi_name') or '',
+                    'wattage': det.get('wattage') or '',
+                    'quantity': int(det.get('quantity') or 0)
+                }
+                for b in bcs:
+                    # Keep first owner seen (unique in practice)
+                    if b not in serial_to_pdi:
+                        serial_to_pdi[b] = str(pid)
+
+        planned_set = pdi_barcode_map.get(pdi_id, set())
+        planned_total = len(planned_set)
+        actual_total = len(actual_set)
+
+        # 3. Buckets
+        matched = planned_set & actual_set                # in plan and actually delivered
+        missing = planned_set - actual_set                # planned but not delivered
+        extras = actual_set - planned_set                 # delivered but not in plan
+        unknown_extras = {b for b in extras if b not in serial_to_pdi}
+
+        # Group extras by owning PDI
+        extras_by_pdi = {}
+        for b in extras:
+            owner = serial_to_pdi.get(b, '__unknown__')
+            extras_by_pdi.setdefault(owner, []).append(b)
+
+        extras_breakdown = []
+        for owner_id, serials in extras_by_pdi.items():
+            if owner_id == '__unknown__':
+                extras_breakdown.append({
+                    'pdi_id': None,
+                    'pdi_name': 'Unknown / Not in any party PDI',
+                    'count': len(serials),
+                    'serials_sample': serials[:50]
+                })
+            else:
+                det = pdi_detail_map.get(owner_id, {})
+                extras_breakdown.append({
+                    'pdi_id': owner_id,
+                    'pdi_name': det.get('pdi_name') or f'PDI {owner_id}',
+                    'count': len(serials),
+                    'serials_sample': serials[:50]
+                })
+        extras_breakdown.sort(key=lambda x: x['count'], reverse=True)
+
+        # Missing breakdown: for each missing barcode, is it sitting under any OTHER pdi?
+        # (Should mostly be under the same planned PDI, but we show running-order/other-pdi hits.)
+        missing_other_owners = {}
+        for b in missing:
+            owner = serial_to_pdi.get(b)
+            if owner and owner != pdi_id:
+                missing_other_owners.setdefault(owner, []).append(b)
+
+        # 4. Party dispatch history (bulk)
+        from datetime import timedelta
+        to_date = datetime.now().strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+
+        mrp_lookup = {}
+        page = 1
+        max_pages = 50
+        while page <= max_pages:
+            try:
+                resp = http_requests.post(
+                    'https://umanmrp.in/api/party-dispatch-history.php',
+                    json={'party_id': party_id, 'from_date': from_date,
+                          'to_date': to_date, 'page': page, 'limit': 10000},
+                    timeout=120
+                )
+                if resp.status_code != 200:
+                    break
+                data = resp.json()
+                ds = data.get('dispatch_summary', [])
+                if not ds:
+                    break
+                for d in ds:
+                    pallet_nos = d.get('pallet_nos', {}) or {}
+                    if isinstance(pallet_nos, dict):
+                        for pallet_no, barcodes_str in pallet_nos.items():
+                            if not isinstance(barcodes_str, str):
+                                continue
+                            for s in barcodes_str.strip().split():
+                                s = s.strip().upper()
+                                if s:
+                                    mrp_lookup[s] = {
+                                        'pallet_no': pallet_no,
+                                        'vehicle_no': d.get('vehicle_no') or 'Unknown',
+                                        'dispatch_date': d.get('dispatch_date') or d.get('date', ''),
+                                        'invoice_no': d.get('invoice_no', '')
+                                    }
+                page += 1
+            except Exception:
+                break
+
+        actual_dispatched = actual_set & set(mrp_lookup.keys())
+        actual_not_dispatched = actual_set - actual_dispatched
+
+        # 5. Packed check (per-barcode) for actual_not_dispatched, capped
+        PACK_CAP = int(request.args.get('pack_cap', 3000))
+        to_check = list(actual_not_dispatched)[:PACK_CAP]
+        skipped = max(0, len(actual_not_dispatched) - PACK_CAP)
+
+        packed_info = {}
+        packed_set = set()
+        pending_set = set()
+
+        def _pack(serial):
+            try:
+                r = http_requests.post(
+                    'https://umanmrp.in/api/get_barcode_tracking.php',
+                    data={'barcode': serial}, timeout=8
+                )
+                if r.status_code != 200:
+                    return ('unknown', serial, None)
+                d = r.json()
+                if not d.get('success') or not d.get('data'):
+                    return ('pending', serial, None)
+                pack = (d['data'] or {}).get('packing') or {}
+                if pack.get('packing_date'):
+                    return ('packed', serial, {
+                        'packing_date': pack.get('packing_date'),
+                        'box_no': pack.get('box_no', ''),
+                        'pallet_no': pack.get('pallet_no', '')
+                    })
+                return ('pending', serial, None)
+            except Exception:
+                return ('unknown', serial, None)
+
+        if to_check:
+            with ThreadPoolExecutor(max_workers=30) as ex:
+                for f in as_completed([ex.submit(_pack, s) for s in to_check]):
+                    status, serial, info = f.result()
+                    if status == 'packed':
+                        packed_set.add(serial)
+                        packed_info[serial] = info or {}
+                    elif status == 'pending':
+                        pending_set.add(serial)
+
+        # Everything beyond cap treated as pending
+        if skipped:
+            pending_set.update(list(actual_not_dispatched)[PACK_CAP:])
+
+        try:
+            planned_wattage = float(pdi_detail_map.get(pdi_id, {}).get('wattage') or 0)
+        except Exception:
+            planned_wattage = 0
+        planned_kw = round(planned_wattage * planned_total / 1000.0, 2)
+        actual_kw = round(planned_wattage * actual_total / 1000.0, 2)
+
+        return jsonify({
+            "success": True,
+            "pdi": {
+                "id": pdi_id,
+                "name": pdi_detail_map.get(pdi_id, {}).get('pdi_name', ''),
+                "wattage": pdi_detail_map.get(pdi_id, {}).get('wattage', ''),
+                "planned_quantity": pdi_detail_map.get(pdi_id, {}).get('quantity', 0),
+                "planned_kw": planned_kw,
+                "actual_kw": actual_kw
+            },
+            "summary": {
+                "planned": planned_total,
+                "actual_uploaded": actual_total,
+                "matched": len(matched),
+                "missing": len(missing),            # planned but not delivered
+                "extras": len(extras),              # delivered but not in plan
+                "unknown_extras": len(unknown_extras),
+                "actual_dispatched": len(actual_dispatched),
+                "actual_packed": len(packed_set),
+                "actual_pending": len(pending_set),
+                "variance_percent": round(((actual_total - planned_total) / planned_total * 100), 2) if planned_total else 0
+            },
+            "extras_breakdown": extras_breakdown,  # which PDI does each extra belong to
+            "missing_in_other_pdis": [{
+                "pdi_id": k,
+                "pdi_name": pdi_detail_map.get(k, {}).get('pdi_name', ''),
+                "count": len(v),
+                "serials_sample": v[:50]
+            } for k, v in missing_other_owners.items()],
+            "matched_sample": sorted(list(matched))[:200],
+            "missing_sample": sorted(list(missing))[:200],
+            "extras_sample": sorted(list(extras))[:200],
+            "packed_sample": [{"serial": s, **(packed_info.get(s) or {})} for s in list(packed_set)[:200]],
+            "pending_sample": sorted(list(pending_set))[:200],
+            "dispatched_sample": [{"serial": s, **mrp_lookup.get(s, {})} for s in list(actual_dispatched)[:200]]
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @ftr_bp.route('/parties-with-pdis', methods=['GET'])

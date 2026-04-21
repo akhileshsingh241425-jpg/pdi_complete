@@ -494,3 +494,87 @@
     margin-top: 10px;
   }
 }
+
+/* ===== PDI Status Panel (Rays-style) ===== */
+.pdi-status-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background: #fff8e6;
+  border: 1px solid #f1d28e;
+  border-radius: 10px;
+  margin: 12px 0;
+  color: #6a4b00;
+}
+.spinner {
+  width: 22px; height: 22px;
+  border: 3px solid #e6c878;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.pdi-status-panel {
+  margin-top: 14px;
+  border: 1px solid #cfe0f5;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 16px;
+  box-shadow: 0 2px 12px rgba(20, 60, 120, 0.06);
+}
+.pdi-status-header {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 12px; margin-bottom: 14px;
+}
+.pdi-status-header h3 { margin: 0 0 4px; color: #16324f; }
+.pdi-status-header p { margin: 0; font-size: 12px; color: #4f6581; }
+
+.status-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.status-card {
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: #fff;
+  display: flex; flex-direction: column; gap: 4px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+.status-card-label { font-size: 12px; opacity: 0.92; font-weight: 600; }
+.status-card-value { font-size: 28px; font-weight: 800; line-height: 1; }
+.status-card-sub { font-size: 11px; opacity: 0.85; }
+
+.status-total      { background: linear-gradient(135deg, #4a90e2, #2c6bbf); }
+.status-tracked    { background: linear-gradient(135deg, #6c5ce7, #4a3bbf); }
+.status-dispatched { background: linear-gradient(135deg, #2bb673, #1a8c54); }
+.status-packed     { background: linear-gradient(135deg, #f0a93b, #c98318); }
+.status-pending    { background: linear-gradient(135deg, #e74c3c, #b03224); }
+.status-unknown    { background: linear-gradient(135deg, #7f8c8d, #4f5b5c); }
+
+.status-progress {
+  display: flex; height: 12px; border-radius: 999px; overflow: hidden;
+  background: #eef3fa; margin-bottom: 16px;
+}
+.status-progress-fill { height: 100%; transition: width 0.3s ease; }
+.status-progress-fill.dispatched { background: #2bb673; }
+.status-progress-fill.packed     { background: #f0a93b; }
+.status-progress-fill.pending    { background: #e74c3c; }
+
+.status-tables {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 14px;
+}
+@media (max-width: 900px) { .status-tables { grid-template-columns: 1fr; } }
+
+.status-table-block { background: #f8fbff; border: 1px solid #e0eaf5; border-radius: 10px; padding: 10px 12px; }
+.status-table-block h4 { margin: 0 0 8px; font-size: 13px; color: #16324f; }
+.status-table-scroll { max-height: 280px; overflow: auto; }
+.status-table-scroll table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.status-table-scroll th, .status-table-scroll td {
+  text-align: left; padding: 6px 8px; border-bottom: 1px solid #e6eef9;
+}
+.status-table-scroll th { background: #eef4fc; position: sticky; top: 0; }
+.status-table-scroll td.empty { text-align: center; color: #8aa0bd; padding: 14px; }

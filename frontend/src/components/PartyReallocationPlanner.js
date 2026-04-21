@@ -221,6 +221,12 @@ const PartyReallocationPlanner = () => {
   const [pdiLookupData, setPdiLookupData] = useState(null);
   const [pdiBarcodeFilter, setPdiBarcodeFilter] = useState('');
 
+  // PDI status (Rays-style summary)
+  const [pdiStatusLoading, setPdiStatusLoading] = useState(false);
+  const [pdiStatusError, setPdiStatusError] = useState('');
+  const [pdiStatusData, setPdiStatusData] = useState(null);
+  const [pdiStatusActiveId, setPdiStatusActiveId] = useState('');
+
   const [pdiCards, setPdiCards] = useState([]);
   const [loadingPdiCards, setLoadingPdiCards] = useState(false);
   const [newPdiCardName, setNewPdiCardName] = useState('');
@@ -499,6 +505,34 @@ const PartyReallocationPlanner = () => {
   // Fetch barcodes from MRP using just the PDI ID
   const fetchPdiBarcodesFromMrp = async () => {
     await fetchPdiBarcodesById(pdiIdInput);
+  };
+
+  // Fetch full Rays-style status for a PDI (total / packed / dispatched / pending)
+  const fetchPdiStatus = async (pdiIdValue) => {
+    const pid = String(pdiIdValue || '').trim();
+    if (!pid) return;
+    setPdiStatusActiveId(pid);
+    setPdiStatusLoading(true);
+    setPdiStatusError('');
+    setPdiStatusData(null);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}`);
+      const data = await resp.json();
+      if (!resp.ok || !data?.success) {
+        throw new Error(data?.error || 'Failed to fetch PDI status');
+      }
+      setPdiStatusData(data);
+    } catch (err) {
+      setPdiStatusError(err.message || 'Failed to fetch PDI status');
+    } finally {
+      setPdiStatusLoading(false);
+    }
+  };
+
+  const closePdiStatus = () => {
+    setPdiStatusActiveId('');
+    setPdiStatusData(null);
+    setPdiStatusError('');
   };
 
   const downloadPdiBarcodesCsv = () => {
@@ -903,8 +937,8 @@ const PartyReallocationPlanner = () => {
                 <button
                   type="button"
                   key={`party-pdi-${item.id}`}
-                  className={`party-card-btn party-card-clickable ${String(pdiLookupData?.pdiId || '') === String(item.id) ? 'active' : ''}`}
-                  onClick={() => fetchPdiBarcodesById(item.id)}
+                  className={`party-card-btn party-card-clickable ${String(pdiStatusActiveId || '') === String(item.id) ? 'active' : ''}`}
+                  onClick={() => fetchPdiStatus(item.id)}
                 >
                   <div className="party-card-avatar pdi-avatar">PDI</div>
                   <div className="party-card-body">
@@ -916,6 +950,131 @@ const PartyReallocationPlanner = () => {
                   <span className="party-card-arrow">&rsaquo;</span>
                 </button>
               ))}
+            </div>
+          </div>
+        )}
+
+        {pdiStatusLoading && (
+          <div className="pdi-status-loading">
+            <div className="spinner" />
+            <p>Loading PDI status... yeh thoda time le sakta hai (parallel barcode tracking).</p>
+          </div>
+        )}
+        {pdiStatusError && <p className="error">{pdiStatusError}</p>}
+
+        {pdiStatusData && (
+          <div className="pdi-status-panel">
+            <div className="pdi-status-header">
+              <div>
+                <h3>{pdiStatusData.pdi?.name || `PDI ${pdiStatusData.pdi?.id}`}</h3>
+                <p>
+                  <strong>PDI ID:</strong> {pdiStatusData.pdi?.id} &nbsp;|&nbsp;
+                  <strong>Wattage:</strong> {pdiStatusData.pdi?.wattage || '-'}W &nbsp;|&nbsp;
+                  <strong>Plan Qty:</strong> {pdiStatusData.pdi?.quantity}
+                </p>
+              </div>
+              <button type="button" className="back-btn" onClick={closePdiStatus}>Close</button>
+            </div>
+
+            <div className="status-cards-grid">
+              <div className="status-card status-total">
+                <div className="status-card-label">Total Produced</div>
+                <div className="status-card-value">{pdiStatusData.summary?.total_barcodes || 0}</div>
+                <div className="status-card-sub">Barcodes from MRP</div>
+              </div>
+              <div className="status-card status-tracked">
+                <div className="status-card-label">Tracked</div>
+                <div className="status-card-value">{pdiStatusData.summary?.tracked || 0}</div>
+                <div className="status-card-sub">
+                  {pdiStatusData.summary?.truncated ? 'Capped at limit' : 'All barcodes'}
+                </div>
+              </div>
+              <div className="status-card status-dispatched">
+                <div className="status-card-label">Dispatched</div>
+                <div className="status-card-value">{pdiStatusData.summary?.dispatched || 0}</div>
+                <div className="status-card-sub">{pdiStatusData.summary?.dispatched_percent || 0}%</div>
+              </div>
+              <div className="status-card status-packed">
+                <div className="status-card-label">Packed (not dispatched)</div>
+                <div className="status-card-value">{pdiStatusData.summary?.packed || 0}</div>
+                <div className="status-card-sub">{pdiStatusData.summary?.packed_percent || 0}%</div>
+              </div>
+              <div className="status-card status-pending">
+                <div className="status-card-label">Pending / Not Packed</div>
+                <div className="status-card-value">{pdiStatusData.summary?.pending || 0}</div>
+                <div className="status-card-sub">{pdiStatusData.summary?.pending_percent || 0}%</div>
+              </div>
+              {pdiStatusData.summary?.unknown > 0 && (
+                <div className="status-card status-unknown">
+                  <div className="status-card-label">Unknown / Error</div>
+                  <div className="status-card-value">{pdiStatusData.summary?.unknown}</div>
+                  <div className="status-card-sub">API error</div>
+                </div>
+              )}
+            </div>
+
+            <div className="status-progress">
+              <div
+                className="status-progress-fill dispatched"
+                style={{ width: `${pdiStatusData.summary?.dispatched_percent || 0}%` }}
+                title={`Dispatched ${pdiStatusData.summary?.dispatched_percent || 0}%`}
+              />
+              <div
+                className="status-progress-fill packed"
+                style={{ width: `${pdiStatusData.summary?.packed_percent || 0}%` }}
+                title={`Packed ${pdiStatusData.summary?.packed_percent || 0}%`}
+              />
+              <div
+                className="status-progress-fill pending"
+                style={{ width: `${pdiStatusData.summary?.pending_percent || 0}%` }}
+                title={`Pending ${pdiStatusData.summary?.pending_percent || 0}%`}
+              />
+            </div>
+
+            <div className="status-tables">
+              <div className="status-table-block">
+                <h4>Recent Dispatched ({pdiStatusData.recent_dispatched?.length || 0})</h4>
+                <div className="status-table-scroll">
+                  <table>
+                    <thead><tr><th>Serial</th><th>Date</th><th>Vehicle</th><th>Invoice</th></tr></thead>
+                    <tbody>
+                      {(pdiStatusData.recent_dispatched || []).map((r) => (
+                        <tr key={`d-${r.serial}`}>
+                          <td>{r.serial}</td>
+                          <td>{r.dispatch_date || '-'}</td>
+                          <td>{r.vehicle_no || '-'}</td>
+                          <td>{r.invoice_no || '-'}</td>
+                        </tr>
+                      ))}
+                      {!(pdiStatusData.recent_dispatched || []).length && (
+                        <tr><td colSpan={4} className="empty">No dispatch yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="status-table-block">
+                <h4>Recent Packed ({pdiStatusData.recent_packed?.length || 0})</h4>
+                <div className="status-table-scroll">
+                  <table>
+                    <thead><tr><th>Serial</th><th>Pack Date</th><th>Box</th><th>Pallet</th></tr></thead>
+                    <tbody>
+                      {(pdiStatusData.recent_packed || []).map((r) => (
+                        <tr key={`p-${r.serial}`}>
+                          <td>{r.serial}</td>
+                          <td>{r.packing_date || '-'}</td>
+                          <td>{r.box_no || '-'}</td>
+                          <td>{r.pallet_no || '-'}</td>
+                        </tr>
+                      ))}
+                      {!(pdiStatusData.recent_packed || []).length && (
+                        <tr><td colSpan={4} className="empty">Nothing packed yet</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -2684,6 +2684,145 @@ def mrp_pdi_barcodes():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@ftr_bp.route('/pdi-status/<pdi_id>', methods=['GET'])
+def pdi_status(pdi_id):
+    """For a given MRP pdi_id, fetch all barcodes and compute Rays-style status:
+    total / packed / dispatched / pending using the barcode tracking API.
+
+    Query params:
+        - limit       : optional max barcodes to track (default 1500)
+        - force       : '1' to bypass cache
+
+    Cached per pdi_id for 5 minutes.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    pdi_id = str(pdi_id or '').strip()
+    if not pdi_id:
+        return jsonify({"success": False, "error": "pdi_id is required"}), 400
+
+    try:
+        limit = int(request.args.get('limit', 1500))
+    except Exception:
+        limit = 1500
+    force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
+
+    cache = pdi_status.__dict__.setdefault('_cache', {})
+    now = time.time()
+    if not force and pdi_id in cache:
+        entry = cache[pdi_id]
+        if (now - entry['timestamp']) < 300:
+            return jsonify({**entry['data'], "cached": True})
+
+    # 1. Get barcodes for the PDI
+    try:
+        barc_resp = http_requests.post(
+            'https://mrp.umanerp.com/get/get_pdi_barcodes.php',
+            json={"pdi_id": pdi_id},
+            timeout=120
+        )
+        barc_data = barc_resp.json() if barc_resp.status_code == 200 else {}
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Failed to fetch PDI barcodes: {e}"}), 502
+
+    if barc_data.get('status') != 'success':
+        return jsonify({
+            "success": False,
+            "error": barc_data.get('message', 'Upstream PDI barcode fetch failed')
+        }), 502
+
+    pdi_details = barc_data.get('pdi_details') or {}
+    barcodes = barc_data.get('barcodes') or []
+    total = len(barcodes)
+    tracked_list = barcodes[:limit] if total > limit else barcodes
+
+    BARCODE_TRACKING_API = 'https://umanmrp.in/api/get_barcode_tracking.php'
+
+    packed = []
+    dispatched = []
+    pending = []
+    unknown = 0
+
+    def track_one(serial):
+        try:
+            r = http_requests.post(
+                BARCODE_TRACKING_API,
+                data={'barcode': serial},
+                timeout=8
+            )
+            if r.status_code != 200:
+                return ('unknown', serial, None)
+            d = r.json()
+            if not d.get('success') or not d.get('data'):
+                return ('pending', serial, None)
+            td = d['data']
+            disp = td.get('dispatch') or {}
+            pack = td.get('packing') or {}
+            if disp.get('dispatch_date'):
+                return ('dispatched', serial, {
+                    'dispatch_date': disp.get('dispatch_date'),
+                    'vehicle_no': disp.get('vehicle_no', ''),
+                    'invoice_no': disp.get('invoice_no', ''),
+                    'party': disp.get('party_name', '')
+                })
+            if pack.get('packing_date'):
+                return ('packed', serial, {
+                    'packing_date': pack.get('packing_date'),
+                    'box_no': pack.get('box_no', ''),
+                    'pallet_no': pack.get('pallet_no', '')
+                })
+            return ('pending', serial, None)
+        except Exception:
+            return ('unknown', serial, None)
+
+    with ThreadPoolExecutor(max_workers=30) as ex:
+        futures = [ex.submit(track_one, s) for s in tracked_list]
+        for f in as_completed(futures):
+            status, serial, info = f.result()
+            entry = {'serial': serial}
+            if info:
+                entry.update(info)
+            if status == 'dispatched':
+                dispatched.append(entry)
+            elif status == 'packed':
+                packed.append(entry)
+            elif status == 'pending':
+                pending.append(entry)
+            else:
+                unknown += 1
+
+    tracked_total = len(packed) + len(dispatched) + len(pending)
+
+    payload = {
+        "success": True,
+        "cached": False,
+        "pdi": {
+            "id": pdi_id,
+            "name": pdi_details.get('pdi_name', ''),
+            "wattage": pdi_details.get('wattage', ''),
+            "quantity": int(pdi_details.get('quantity') or 0)
+        },
+        "summary": {
+            "total_barcodes": total,
+            "tracked": len(tracked_list),
+            "truncated": total > limit,
+            "packed": len(packed),
+            "dispatched": len(dispatched),
+            "pending": len(pending),
+            "unknown": unknown,
+            "packed_percent": round((len(packed) / tracked_total * 100), 1) if tracked_total else 0,
+            "dispatched_percent": round((len(dispatched) / tracked_total * 100), 1) if tracked_total else 0,
+            "pending_percent": round((len(pending) / tracked_total * 100), 1) if tracked_total else 0
+        },
+        "recent_dispatched": dispatched[:50],
+        "recent_packed": packed[:50],
+        "recent_pending": pending[:50]
+    }
+
+    cache[pdi_id] = {"timestamp": now, "data": payload}
+    return jsonify(payload)
+
+
 @ftr_bp.route('/parties-with-pdis', methods=['GET'])
 def parties_with_pdis():
     """Return only parties that have at least one PDI in MRP.

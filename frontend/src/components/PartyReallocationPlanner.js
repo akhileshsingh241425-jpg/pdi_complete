@@ -170,8 +170,33 @@ const buildWorkspaceComparison = (pdiText, runningOrderText, barcodeText, reject
 
 const PartyReallocationPlanner = () => {
   const queryParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const initialCompanyNameFromUrl = (queryParams.get('companyName') || '').trim();
   const initialPartyIdFromUrl = (queryParams.get('partyId') || '').trim();
-  const isPartyDetailMode = Boolean(initialPartyIdFromUrl);
+  const [detailPartyId, setDetailPartyId] = useState(initialPartyIdFromUrl);
+  const [detailPartyName, setDetailPartyName] = useState(initialCompanyNameFromUrl);
+  const isPartyDetailMode = Boolean(detailPartyId);
+
+  const openPartyDetail = (party) => {
+    setDetailPartyId(party.id);
+    setDetailPartyName(party.companyName || '');
+    setActivePartyId(party.id);
+    const newUrl = `${window.location.pathname}?section=party-reallocation&partyId=${encodeURIComponent(party.id)}&companyName=${encodeURIComponent(party.companyName || '')}`;
+    window.history.pushState({ partyId: party.id, companyName: party.companyName }, '', newUrl);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const exitPartyDetail = () => {
+    setDetailPartyId('');
+    setDetailPartyName('');
+    setPartyPdiList([]);
+    setPdiLookupData(null);
+    setPdiLookupError('');
+    setPartyPdiListError('');
+    setPartyNameIdInput('');
+    const newUrl = `${window.location.pathname}?section=party-reallocation`;
+    window.history.pushState({}, '', newUrl);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
 
   const [parties, setParties] = useState([]);
   const [packedPartyIds, setPackedPartyIds] = useState([]);
@@ -227,7 +252,7 @@ const PartyReallocationPlanner = () => {
       setLoadingParties(true);
       setError('');
       try {
-        const res = await fetch(`${API_BASE_URL}/ftr/sales-parties`);
+        const res = await fetch(`${API_BASE_URL}/ftr/parties-with-pdis`);
         const data = await res.json();
         if (!data.success) {
           throw new Error(data.error || 'Failed to load parties');
@@ -256,6 +281,20 @@ const PartyReallocationPlanner = () => {
       setActivePartyId(parties[0].id);
     }
   }, [activePartyId, parties, isPartyDetailMode]);
+
+  // Sync detail mode with browser back/forward
+  useEffect(() => {
+    const onPop = () => {
+      const sp = new URLSearchParams(window.location.search);
+      const pid = (sp.get('partyId') || '').trim();
+      const cname = (sp.get('companyName') || '').trim();
+      setDetailPartyId(pid);
+      setDetailPartyName(cname);
+      if (pid) setActivePartyId(pid);
+    };
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
 
   const packedOnlyParties = useMemo(
     () => parties.filter((p) => (
@@ -815,38 +854,38 @@ const PartyReallocationPlanner = () => {
 
         {!isPartyDetailMode && (
           <div className="party-cards-grid">
-            {partyCardsFiltered.map((party) => {
-              const detailUrl = `${window.location.pathname}?section=party-reallocation&partyId=${encodeURIComponent(party.id)}&companyName=${encodeURIComponent(party.companyName || '')}`;
-              return (
-                <a
-                  key={`party-auto-${party.id}`}
-                  className="party-card-btn"
-                  href={detailUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
+            {partyCardsFiltered.map((party) => (
+              <button
+                type="button"
+                key={`party-auto-${party.id}`}
+                className="party-card-btn party-card-clickable"
+                onClick={() => openPartyDetail(party)}
+              >
+                <div className="party-card-avatar">{(party.companyName || '?').charAt(0).toUpperCase()}</div>
+                <div className="party-card-body">
                   <h4>{party.companyName}</h4>
-                  <p>Party ID: {party.id}</p>
-                  <p style={{ fontSize: 11, opacity: 0.7 }}>Click to open in new tab</p>
-                </a>
-              );
-            })}
+                  <div className="party-card-stats">
+                    <span>{party.pdiCount || 0} PDI</span>
+                  </div>
+                </div>
+                <span className="party-card-arrow">&rsaquo;</span>
+              </button>
+            ))}
             {!partyCardsFiltered.length && !loadingParties && (
               <p className="info">No parties match your search.</p>
             )}
           </div>
         )}
 
-        {isPartyDetailMode && activeParty && (
-          <div className="workspace-editor-header">
-            <h3>{activeParty.companyName}</h3>
-            <p><strong>Party ID:</strong> {activeParty.id}</p>
-          </div>
-        )}
-        {isPartyDetailMode && !activeParty && activePartyId && (
-          <div className="workspace-editor-header">
-            <h3>{decodeURIComponent(new URLSearchParams(window.location.search).get('companyName') || 'Selected Party')}</h3>
-            <p><strong>Party ID:</strong> {activePartyId}</p>
+        {isPartyDetailMode && (
+          <div className="party-detail-header">
+            <button type="button" className="back-btn" onClick={exitPartyDetail}>
+              &larr; Back to Parties
+            </button>
+            <div className="party-detail-title">
+              <h3>{(activeParty && activeParty.companyName) || detailPartyName || 'Selected Party'}</h3>
+              <p><strong>Party ID:</strong> {detailPartyId}</p>
+            </div>
           </div>
         )}
 
@@ -864,11 +903,17 @@ const PartyReallocationPlanner = () => {
                 <button
                   type="button"
                   key={`party-pdi-${item.id}`}
-                  className={`party-card-btn ${String(pdiLookupData?.pdiId || '') === String(item.id) ? 'active' : ''}`}
+                  className={`party-card-btn party-card-clickable ${String(pdiLookupData?.pdiId || '') === String(item.id) ? 'active' : ''}`}
                   onClick={() => fetchPdiBarcodesById(item.id)}
                 >
-                  <h4>{item.pdi_name || `PDI ${item.id}`}</h4>
-                  <p>PDI ID: {item.id}</p>
+                  <div className="party-card-avatar pdi-avatar">PDI</div>
+                  <div className="party-card-body">
+                    <h4>{item.pdi_name || `PDI ${item.id}`}</h4>
+                    <div className="party-card-stats">
+                      <span>ID: {item.id}</span>
+                    </div>
+                  </div>
+                  <span className="party-card-arrow">&rsaquo;</span>
                 </button>
               ))}
             </div>

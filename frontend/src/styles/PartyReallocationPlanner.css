@@ -54,8 +54,8 @@
 
 .party-cards-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
   margin-bottom: 14px;
 }
 
@@ -65,8 +65,54 @@
   border-radius: 12px;
   background: #f8fbff;
   color: #16324f;
-  padding: 10px;
+  padding: 12px;
   cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, border-color 0.12s ease;
+}
+
+.party-card-clickable {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: linear-gradient(135deg, #ffffff 0%, #f3f8ff 100%);
+  text-decoration: none;
+}
+
+.party-card-clickable:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(20, 60, 120, 0.12);
+  border-color: #6ca8e7;
+}
+
+.party-card-avatar {
+  flex: 0 0 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #4a90e2, #2c6bbf);
+  color: #fff;
+  font-weight: 700;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  letter-spacing: 0.5px;
+}
+
+.party-card-avatar.pdi-avatar {
+  background: linear-gradient(135deg, #2bb673, #1a8c54);
+  font-size: 12px;
+}
+
+.party-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.party-card-arrow {
+  font-size: 22px;
+  color: #6ca8e7;
+  font-weight: 700;
+  padding-left: 4px;
 }
 
 .party-card-btn.active {
@@ -78,11 +124,53 @@
 .party-card-btn h4 {
   margin: 0 0 6px;
   font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .party-card-btn p {
   margin: 0 0 8px;
   font-size: 11px;
+  color: #4f6581;
+}
+
+.party-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  background: linear-gradient(135deg, #eaf3ff, #f7fbff);
+  border: 1px solid #cfe0f5;
+  border-radius: 12px;
+  margin-bottom: 14px;
+}
+
+.party-detail-header .back-btn {
+  background: #fff;
+  border: 1px solid #6ca8e7;
+  color: #1f5fa8;
+  padding: 8px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.party-detail-header .back-btn:hover {
+  background: #6ca8e7;
+  color: #fff;
+}
+
+.party-detail-title h3 {
+  margin: 0 0 4px;
+  font-size: 18px;
+  color: #16324f;
+}
+
+.party-detail-title p {
+  margin: 0;
+  font-size: 12px;
   color: #4f6581;
 }
 

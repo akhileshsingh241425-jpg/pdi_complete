@@ -2684,6 +2684,99 @@ def mrp_pdi_barcodes():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+@ftr_bp.route('/parties-with-pdis', methods=['GET'])
+def parties_with_pdis():
+    """Return only parties that have at least one PDI in MRP.
+
+    Internally fetches /ftr/sales-parties list, then for each party_name_id
+    calls https://umanmrp.in/get/get_all_pdi.php in parallel and keeps only
+    parties whose `data` array is non-empty.
+
+    Cached for 10 minutes. Pass ?force_refresh=true to bypass.
+
+    Response: { success, count, parties: [{id, companyName, pdiCount}] }
+    """
+    try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+
+        force = request.args.get('force_refresh', '').lower() == 'true'
+        now = time.time()
+
+        cache = parties_with_pdis.__dict__.setdefault(
+            '_cache', {'data': None, 'timestamp': 0}
+        )
+        if (not force
+                and cache['data'] is not None
+                and (now - cache['timestamp']) < 600):
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "count": len(cache['data']),
+                "parties": cache['data']
+            })
+
+        # Get full party list (use existing cache if possible)
+        if SALES_PARTY_CACHE['data'] is not None and (now - SALES_PARTY_CACHE['timestamp']) < SALES_PARTY_CACHE_TTL:
+            all_parties = SALES_PARTY_CACHE['data']
+        else:
+            person_id = request.args.get('person_id') or SALES_PERSON_ID
+            sp_resp = http_requests.post(SALES_PARTY_API, json={"personId": person_id}, timeout=60)
+            payload = sp_resp.json() if sp_resp.status_code == 200 else {}
+            raw = payload.get('data') or []
+            all_parties = []
+            for p in raw:
+                pid = p.get('PartyNameId')
+                name = (p.get('PartyName') or '').strip()
+                if pid and name:
+                    all_parties.append({"id": pid, "companyName": name})
+            SALES_PARTY_CACHE['data'] = all_parties
+            SALES_PARTY_CACHE['timestamp'] = now
+
+        def check_party(party):
+            try:
+                r = http_requests.post(
+                    'https://umanmrp.in/get/get_all_pdi.php',
+                    json={"party_name_id": party['id']},
+                    timeout=30
+                )
+                d = r.json() if r.status_code == 200 else {}
+                pdis = d.get('data') if d.get('status') == 'success' else None
+                pdi_count = len(pdis) if isinstance(pdis, list) else 0
+                if pdi_count > 0:
+                    return {
+                        "id": party['id'],
+                        "companyName": party['companyName'],
+                        "pdiCount": pdi_count
+                    }
+            except Exception:
+                return None
+            return None
+
+        results = []
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futures = [ex.submit(check_party, p) for p in all_parties]
+            for f in as_completed(futures):
+                r = f.result()
+                if r:
+                    results.append(r)
+
+        results.sort(key=lambda x: x['companyName'].lower())
+
+        cache['data'] = results
+        cache['timestamp'] = now
+
+        return jsonify({
+            "success": True,
+            "cached": False,
+            "count": len(results),
+            "parties": results
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @ftr_bp.route('/dispatch-by-party/<party_id>', methods=['GET'])
 def get_dispatch_by_party(party_id):
     """

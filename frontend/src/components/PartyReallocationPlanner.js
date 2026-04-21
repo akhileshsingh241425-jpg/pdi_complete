@@ -293,8 +293,28 @@ const PartyReallocationPlanner = () => {
   const packingIdSet = useMemo(() => new Set(VALID_PACKING_PARTY_IDS), []);
 
   useEffect(() => {
+    const CACHE_KEY = 'pr_parties_cache_v1';
+    const SUMMARY_KEY = 'pr_party_summary_cache_v1';
+
+    // Hydrate instantly from localStorage (no spinner wait)
+    try {
+      const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
+      if (cached && Array.isArray(cached.parties) && cached.parties.length) {
+        setParties(cached.parties);
+        setLoadingParties(false);
+      }
+      const cachedSum = JSON.parse(localStorage.getItem(SUMMARY_KEY) || 'null');
+      if (cachedSum && typeof cachedSum === 'object') {
+        setPartyWorkspaceMap(cachedSum);
+      }
+    } catch (_) {}
+
     const loadParties = async () => {
-      setLoadingParties(true);
+      // Only show spinner if no cached data on screen
+      setParties(prev => {
+        if (!prev || prev.length === 0) setLoadingParties(true);
+        return prev;
+      });
       setError('');
       try {
         const res = await fetch(`${API_BASE_URL}/ftr/parties-with-pdis`);
@@ -304,15 +324,20 @@ const PartyReallocationPlanner = () => {
         }
         const list = Array.isArray(data.parties) ? data.parties : [];
         setParties(list);
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ parties: list, ts: Date.now() })); } catch (_) {}
 
         const summaryRes = await fetch(`${API_BASE_URL}/ftr/party-workspace-summaries`);
         const summaryData = await summaryRes.json();
         if (summaryData?.success && summaryData?.summaries) {
           setPartyWorkspaceMap(summaryData.summaries);
+          try { localStorage.setItem(SUMMARY_KEY, JSON.stringify(summaryData.summaries)); } catch (_) {}
         }
       } catch (err) {
-        setError(err.message || 'Unable to load party list');
-        setParties([]);
+        // Don't wipe cached list on network error
+        setParties(prev => (prev && prev.length ? prev : []));
+        if (!parties || parties.length === 0) {
+          setError(err.message || 'Unable to load party list');
+        }
       } finally {
         setLoadingParties(false);
       }

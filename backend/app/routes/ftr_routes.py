@@ -3878,60 +3878,78 @@ def pdi_actual_compare():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@ftr_bp.route('/parties-with-pdis', methods=['GET'])
-def parties_with_pdis():
-    """Return only parties that have at least one PDI in MRP.
+# ------------------------------------------------------------
+# parties-with-pdis — fast endpoint with disk cache + SWR
+# ------------------------------------------------------------
+_PARTIES_PDI_CACHE_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    'parties_with_pdis_cache.json'
+)
+_PARTIES_PDI_CACHE_TTL = 900          # 15 min fresh window
+_PARTIES_PDI_CACHE_MAX_AGE = 86400    # serve stale up to 24h
+_PARTIES_PDI_REFRESH_LOCK = False     # simple in-process guard
 
-    Internally fetches /ftr/sales-parties list, then for each party_name_id
-    calls https://umanmrp.in/get/get_all_pdi.php in parallel and keeps only
-    parties whose `data` array is non-empty.
 
-    Cached for 10 minutes. Pass ?force_refresh=true to bypass.
+def _load_parties_pdi_disk_cache():
+    try:
+        if os.path.exists(_PARTIES_PDI_CACHE_FILE):
+            with open(_PARTIES_PDI_CACHE_FILE, 'r', encoding='utf-8') as f:
+                d = json.load(f)
+                if isinstance(d, dict) and isinstance(d.get('data'), list):
+                    return d
+    except Exception:
+        pass
+    return None
 
-    Response: { success, count, parties: [{id, companyName, pdiCount}] }
-    """
+
+def _save_parties_pdi_disk_cache(data, ts):
+    try:
+        with open(_PARTIES_PDI_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump({'data': data, 'timestamp': ts}, f)
+    except Exception as e:
+        print(f"[parties-with-pdis] disk cache write failed: {e}")
+
+
+def _refresh_parties_with_pdis_bg():
+    """Background refresh: fetch full list + probe each party's PDI count."""
+    global _PARTIES_PDI_REFRESH_LOCK
+    if _PARTIES_PDI_REFRESH_LOCK:
+        return
+    _PARTIES_PDI_REFRESH_LOCK = True
     try:
         from concurrent.futures import ThreadPoolExecutor, as_completed
-
-        force = request.args.get('force_refresh', '').lower() == 'true'
         now = time.time()
 
-        cache = parties_with_pdis.__dict__.setdefault(
-            '_cache', {'data': None, 'timestamp': 0}
-        )
-        if (not force
-                and cache['data'] is not None
-                and (now - cache['timestamp']) < 600):
-            return jsonify({
-                "success": True,
-                "cached": True,
-                "count": len(cache['data']),
-                "parties": cache['data']
-            })
-
-        # Get full party list (use existing cache if possible)
+        # Full party list (reuse cache)
         if SALES_PARTY_CACHE['data'] is not None and (now - SALES_PARTY_CACHE['timestamp']) < SALES_PARTY_CACHE_TTL:
             all_parties = SALES_PARTY_CACHE['data']
         else:
-            person_id = request.args.get('person_id') or SALES_PERSON_ID
-            sp_resp = http_requests.post(SALES_PARTY_API, json={"personId": person_id}, timeout=60)
-            payload = sp_resp.json() if sp_resp.status_code == 200 else {}
-            raw = payload.get('data') or []
-            all_parties = []
-            for p in raw:
-                pid = p.get('PartyNameId')
-                name = (p.get('PartyName') or '').strip()
-                if pid and name:
-                    all_parties.append({"id": pid, "companyName": name})
-            SALES_PARTY_CACHE['data'] = all_parties
-            SALES_PARTY_CACHE['timestamp'] = now
+            try:
+                sp_resp = http_requests.post(
+                    SALES_PARTY_API,
+                    json={"personId": SALES_PERSON_ID},
+                    timeout=30
+                )
+                payload = sp_resp.json() if sp_resp.status_code == 200 else {}
+                raw = payload.get('data') or []
+                all_parties = []
+                for p in raw:
+                    pid = p.get('PartyNameId')
+                    name = (p.get('PartyName') or '').strip()
+                    if pid and name:
+                        all_parties.append({"id": pid, "companyName": name})
+                SALES_PARTY_CACHE['data'] = all_parties
+                SALES_PARTY_CACHE['timestamp'] = now
+            except Exception as e:
+                print(f"[parties-with-pdis] sales-parties fetch failed: {e}")
+                return
 
         def check_party(party):
             try:
                 r = http_requests.post(
                     'https://umanmrp.in/get/get_all_pdi.php',
                     json={"party_name_id": party['id']},
-                    timeout=30
+                    timeout=8
                 )
                 d = r.json() if r.status_code == 200 else {}
                 pdis = d.get('data') if d.get('status') == 'success' else None
@@ -3947,7 +3965,7 @@ def parties_with_pdis():
             return None
 
         results = []
-        with ThreadPoolExecutor(max_workers=10) as ex:
+        with ThreadPoolExecutor(max_workers=40) as ex:
             futures = [ex.submit(check_party, p) for p in all_parties]
             for f in as_completed(futures):
                 r = f.result()
@@ -3956,14 +3974,83 @@ def parties_with_pdis():
 
         results.sort(key=lambda x: x['companyName'].lower())
 
+        # Update memory + disk cache
+        cache = parties_with_pdis.__dict__.setdefault('_cache', {'data': None, 'timestamp': 0})
         cache['data'] = results
         cache['timestamp'] = now
+        _save_parties_pdi_disk_cache(results, now)
+        print(f"[parties-with-pdis] refreshed: {len(results)} parties with PDIs")
+    except Exception as e:
+        print(f"[parties-with-pdis] bg refresh failed: {e}")
+    finally:
+        _PARTIES_PDI_REFRESH_LOCK = False
 
+
+@ftr_bp.route('/parties-with-pdis', methods=['GET'])
+def parties_with_pdis():
+    """Return parties that have at least one PDI in MRP.
+
+    Strategy (stale-while-revalidate):
+      1. If in-memory cache is fresh (<15min) -> return instantly.
+      2. Else if disk cache exists (<24h) -> return stale, kick off
+         background refresh.
+      3. Else (cold start, no cache) -> run the full fetch synchronously.
+
+    ?force_refresh=true bypasses #1 and #2 and always does a full fetch.
+
+    Response: { success, count, parties, cached, stale, age_seconds }
+    """
+    try:
+        import threading
+        force = request.args.get('force_refresh', '').lower() == 'true'
+        now = time.time()
+
+        cache = parties_with_pdis.__dict__.setdefault(
+            '_cache', {'data': None, 'timestamp': 0}
+        )
+
+        # Hydrate memory cache from disk once per process
+        if cache['data'] is None:
+            disk = _load_parties_pdi_disk_cache()
+            if disk:
+                cache['data'] = disk.get('data') or []
+                cache['timestamp'] = float(disk.get('timestamp') or 0)
+
+        age = now - (cache['timestamp'] or 0)
+
+        # 1. Fresh cache
+        if not force and cache['data'] and age < _PARTIES_PDI_CACHE_TTL:
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "stale": False,
+                "age_seconds": int(age),
+                "count": len(cache['data']),
+                "parties": cache['data']
+            })
+
+        # 2. Stale-but-usable cache -> serve immediately + refresh in bg
+        if not force and cache['data'] and age < _PARTIES_PDI_CACHE_MAX_AGE:
+            threading.Thread(target=_refresh_parties_with_pdis_bg, daemon=True).start()
+            return jsonify({
+                "success": True,
+                "cached": True,
+                "stale": True,
+                "age_seconds": int(age),
+                "count": len(cache['data']),
+                "parties": cache['data']
+            })
+
+        # 3. Cold start / forced refresh -> sync refresh (blocking)
+        _refresh_parties_with_pdis_bg()
+        data = cache.get('data') or []
         return jsonify({
             "success": True,
             "cached": False,
-            "count": len(results),
-            "parties": results
+            "stale": False,
+            "age_seconds": 0,
+            "count": len(data),
+            "parties": data
         })
     except Exception as e:
         import traceback

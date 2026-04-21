@@ -3187,8 +3187,9 @@ def create_actual_pdi_batch(party_id):
         conn = get_db_connection()
         cursor = conn.cursor()
         _ensure_actual_pdi_batches_table(cursor)
-        cursor.execute("SELECT COALESCE(MAX(batch_no),0)+1 FROM actual_pdi_batches WHERE party_id=%s", (party_id,))
-        next_no = cursor.fetchone()[0] or 1
+        cursor.execute("SELECT COALESCE(MAX(batch_no),0)+1 AS next_no FROM actual_pdi_batches WHERE party_id=%s", (party_id,))
+        row = cursor.fetchone()
+        next_no = (row['next_no'] if row else None) or 1
         if not batch_name:
             batch_name = f"PDI {next_no}"
         cursor.execute("""

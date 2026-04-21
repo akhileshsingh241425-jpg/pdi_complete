@@ -2801,9 +2801,10 @@ def pdi_status(pdi_id):
     not_dispatched_set = pdi_barcode_set - dispatched_set
 
     # ===== 3b. Detect packed (not dispatched) via per-barcode tracking API =====
-    # Cache per barcode for 30 min to avoid re-hitting upstream
+    # Cache per barcode for 30 min to avoid re-hitting upstream.
+    # NO CAP — every undispatched barcode is checked. Cache + 12 parallel
+    # workers + keep-alive HTTP session keeps this fast on repeat calls.
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    PACK_CAP = int(request.args.get('pack_cap', 3000))
     pack_cache = pdi_status.__dict__.setdefault('_pack_cache', {})
     PACK_TTL = 1800
 
@@ -2814,7 +2815,7 @@ def pdi_status(pdi_id):
 
     not_disp_list = list(not_dispatched_set)
     to_check = []
-    for s in not_disp_list[:PACK_CAP]:
+    for s in not_disp_list:
         entry = pack_cache.get(s)
         if entry and (now - entry['t']) < PACK_TTL:
             if entry['status'] == 'packed':
@@ -2848,8 +2849,9 @@ def pdi_status(pdi_id):
             return ('unknown', serial, None)
 
     if to_check:
-        # Cap workers — under high concurrency 30/req balloons total threads
-        with ThreadPoolExecutor(max_workers=12) as ex:
+        # Bigger pool here is OK — these are short-lived I/O-bound calls
+        # and the request itself is what the user is waiting on.
+        with ThreadPoolExecutor(max_workers=20) as ex:
             for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
                 status, serial, info = f.result()
                 if status == 'packed':
@@ -2862,11 +2864,7 @@ def pdi_status(pdi_id):
                 else:
                     pack_unknown += 1
 
-    # Anything beyond cap counted as unknown_pack
-    skipped_pack_check = max(0, len(not_disp_list) - PACK_CAP)
-    if skipped_pack_check:
-        # treat skipped as pending (best guess) — UI shows the cap
-        pending_set.update(not_disp_list[PACK_CAP:])
+    skipped_pack_check = 0  # no cap — kept for response shape compat
 
     # Group dispatched by vehicle and pallet
     vehicle_map = {}
@@ -2952,7 +2950,7 @@ def pdi_status(pdi_id):
             "packed_percent": packed_pct,
             "pending_percent": pending_pct,
             "party_dispatch_universe": len(mrp_lookup),
-            "pack_check_capped_at": PACK_CAP,
+            "pack_check_capped_at": 0,            # 0 = no cap
             "pack_skipped_due_to_cap": skipped_pack_check,
             "pack_unknown": pack_unknown
         },

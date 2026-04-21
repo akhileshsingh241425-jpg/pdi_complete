@@ -232,6 +232,7 @@ const PartyReallocationPlanner = () => {
   // Actual PDI compare
   const [actualFileName, setActualFileName] = useState('');
   const [actualBarcodes, setActualBarcodes] = useState([]);
+  const [manualBarcodeInput, setManualBarcodeInput] = useState('');
   const [actualCompareLoading, setActualCompareLoading] = useState(false);
   const [actualCompareError, setActualCompareError] = useState('');
   const [actualCompareData, setActualCompareData] = useState(null);
@@ -552,6 +553,7 @@ const PartyReallocationPlanner = () => {
     setActualCompareError('');
     setActualBarcodes([]);
     setActualFileName('');
+    setManualBarcodeInput('');
   };
 
   // ---- Actual PDI upload + compare ----
@@ -603,8 +605,13 @@ const PartyReallocationPlanner = () => {
       setActualCompareError('Party ID missing');
       return;
     }
-    if (!actualBarcodes.length) {
-      setActualCompareError('Upload actual PDI file first');
+
+    // Combine file-parsed barcodes + manually typed barcodes
+    const manualParsed = parseSerials(manualBarcodeInput);
+    const combined = Array.from(new Set([...actualBarcodes, ...manualParsed]));
+
+    if (!combined.length) {
+      setActualCompareError('Pehle barcodes add karo — file upload karo ya manually paste karo');
       return;
     }
     setActualCompareLoading(true);
@@ -617,7 +624,8 @@ const PartyReallocationPlanner = () => {
         body: JSON.stringify({
           pdi_id: pdiStatusActiveId,
           party_id: partyId,
-          actual_barcodes: actualBarcodes
+          party_name: detailPartyName || (parties.find((p) => p.id === partyId) || {}).companyName || '',
+          actual_barcodes: combined
         })
       });
       const data = await resp.json();
@@ -1085,6 +1093,70 @@ const PartyReallocationPlanner = () => {
               <button type="button" className="back-btn" onClick={closePdiStatus}>Close</button>
             </div>
 
+            {/* Actual PDI Upload & Compare - placed at top so it's immediately visible */}
+            <div className="actual-pdi-box highlight">
+              <div className="actual-pdi-head">
+                <div>
+                  <h4>📤 Actual PDI Barcodes — Add karo aur Full Report Lo</h4>
+                  <p>Customer ke saath jo actually PDI hui uski barcode list yahan add karo (file upload <strong>ya</strong> manually paste karo). System batayega: kitna pack hua, kitna nahi, kis running order ka kitna bacha, aur extra/missing detail.</p>
+                </div>
+              </div>
+
+              {/* Option 1: File upload */}
+              <div className="actual-pdi-section-label">Option 1 — Excel / CSV File Upload</div>
+              <div className="actual-pdi-actions">
+                <input
+                  ref={actualFileRef}
+                  type="file"
+                  accept=".xlsx,.xls,.csv"
+                  style={{ display: 'none' }}
+                  onChange={(e) => handleActualFile(e.target.files?.[0])}
+                />
+                <button type="button" onClick={() => actualFileRef.current?.click()}>
+                  {actualFileName ? `📄 ${actualFileName}` : '📁 Choose Excel / CSV File'}
+                </button>
+                <span className="muted">
+                  {actualBarcodes.length ? `✅ ${actualBarcodes.length} barcodes parsed from file` : 'No file chosen yet'}
+                </span>
+              </div>
+
+              {/* Option 2: Manual paste */}
+              <div className="actual-pdi-section-label">Option 2 — Manually Paste / Type Barcodes</div>
+              <div className="actual-pdi-manual-area">
+                <textarea
+                  className="actual-barcode-textarea"
+                  rows={5}
+                  placeholder="Barcodes yahan paste karo — ek line me ek barcode, ya comma/space se alag karo&#10;Example:&#10;GS04202500001&#10;GS04202500002&#10;GS04202500003"
+                  value={manualBarcodeInput}
+                  onChange={(e) => setManualBarcodeInput(e.target.value)}
+                />
+                <div className="actual-pdi-manual-count">
+                  {manualBarcodeInput.trim()
+                    ? `✅ ${parseSerials(manualBarcodeInput).length} barcodes detected`
+                    : 'Koi barcode nahi dala abhi'}
+                </div>
+              </div>
+
+              {/* Combined count & Compare button */}
+              <div className="actual-pdi-actions" style={{ marginTop: '10px' }}>
+                <span className="muted">
+                  {(() => {
+                    const total = new Set([...actualBarcodes, ...parseSerials(manualBarcodeInput)]).size;
+                    return total > 0 ? `📊 Total combined: ${total} unique barcodes` : 'Koi barcode add nahi hua';
+                  })()}
+                </span>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={runActualCompare}
+                  disabled={actualCompareLoading || (actualBarcodes.length === 0 && !manualBarcodeInput.trim())}
+                >
+                  {actualCompareLoading ? '⏳ Comparing...' : '🔍 Full Report Generate Karo'}
+                </button>
+              </div>
+              {actualCompareError && <p className="error">{actualCompareError}</p>}
+            </div>
+
             <div className="status-cards-grid">
               <div className="status-card status-total">
                 <div className="status-card-label">Total Produced</div>
@@ -1189,39 +1261,6 @@ const PartyReallocationPlanner = () => {
             </div>
 
             {/* Actual PDI Upload & Compare */}
-            <div className="actual-pdi-box">
-              <div className="actual-pdi-head">
-                <div>
-                  <h4>Actual PDI Compare</h4>
-                  <p>Customer ke saath jo actually PDI hui uski barcode list (Excel / CSV) upload karo. System batayega kya match hua, kya missing hai, aur extras kis PDI/RO ke hain.</p>
-                </div>
-              </div>
-              <div className="actual-pdi-actions">
-                <input
-                  ref={actualFileRef}
-                  type="file"
-                  accept=".xlsx,.xls,.csv"
-                  style={{ display: 'none' }}
-                  onChange={(e) => handleActualFile(e.target.files?.[0])}
-                />
-                <button type="button" onClick={() => actualFileRef.current?.click()}>
-                  {actualFileName ? `File: ${actualFileName}` : 'Choose Excel / CSV'}
-                </button>
-                <span className="muted">
-                  {actualBarcodes.length ? `${actualBarcodes.length} barcodes parsed` : 'No file chosen'}
-                </span>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={runActualCompare}
-                  disabled={!actualBarcodes.length || actualCompareLoading}
-                >
-                  {actualCompareLoading ? 'Comparing...' : 'Compare with Planned PDI'}
-                </button>
-              </div>
-              {actualCompareError && <p className="error">{actualCompareError}</p>}
-            </div>
-
             {actualCompareData && (
               <div className="actual-compare-panel">
                 <h4>Comparison Result - {actualCompareData.pdi?.name}</h4>
@@ -1308,7 +1347,122 @@ const PartyReallocationPlanner = () => {
                   <button type="button" onClick={() => downloadSerialsCsv('matched', actualCompareData.matched_sample || [])}>Matched CSV</button>
                   <button type="button" onClick={() => downloadSerialsCsv('missing', actualCompareData.missing_sample || [])}>Missing CSV</button>
                   <button type="button" onClick={() => downloadSerialsCsv('extras', actualCompareData.extras_sample || [])}>Extras CSV</button>
+                  <button type="button" onClick={() => downloadSerialsCsv('packed', (actualCompareData.packed_sample || []).map((x) => x.serial || x))}>Packed CSV</button>
+                  <button type="button" onClick={() => downloadSerialsCsv('pending', actualCompareData.pending_sample || [])}>Not Packed CSV</button>
+                  <button type="button" onClick={() => downloadSerialsCsv('dispatched', (actualCompareData.dispatched_sample || []).map((x) => x.serial || x))}>Dispatched CSV</button>
                 </div>
+
+                {/* Running Order Breakdown */}
+                {(actualCompareData.running_order_breakdown || []).length > 0 && (
+                  <div className="ro-breakdown-section">
+                    <h4>📦 Running Order Breakdown — Kitna Pack Hua</h4>
+                    <p className="muted">Packed barcodes ko unke running order ke hisaab se group kiya gaya hai.</p>
+                    <div className="status-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Running Order</th>
+                            <th>Packed Count</th>
+                            <th>Sample Barcodes</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(actualCompareData.running_order_breakdown || []).map((ro, i) => (
+                            <tr key={`ro-${ro.running_order}-${i}`}>
+                              <td>{i + 1}</td>
+                              <td><strong>{ro.running_order}</strong></td>
+                              <td><span className="badge-packed">{ro.packed_count}</span></td>
+                              <td className="mono">{(ro.serials_sample || []).slice(0, 3).join(', ')}{(ro.serials_sample || []).length > 3 ? ' ...' : ''}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Dispatch Vehicle Breakdown */}
+                {(actualCompareData.dispatch_breakdown || []).length > 0 && (
+                  <div className="ro-breakdown-section">
+                    <h4>🚛 Dispatch Vehicle Breakdown — Actual Dispatched Modules</h4>
+                    <p className="muted">Jo barcodes already dispatch ho chuke hain unka vehicle-wise breakdown — kis party me pack hua tha aur kis party me dispatch hua.</p>
+                    <div className="status-table-scroll">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Vehicle No.</th>
+                            <th>Dispatch Date</th>
+                            <th>Invoice No.</th>
+                            <th>Dispatch Party</th>
+                            <th>Modules</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(actualCompareData.dispatch_breakdown || []).map((veh, i) => (
+                            <tr key={`veh-${veh.vehicle_no}-${i}`}>
+                              <td>{i + 1}</td>
+                              <td><strong>{veh.vehicle_no}</strong></td>
+                              <td>{veh.dispatch_date || '-'}</td>
+                              <td>{veh.invoice_no || '-'}</td>
+                              <td className="dispatch-party-cell">{veh.dispatch_party || '-'}</td>
+                              <td><span className="badge-dispatched">{veh.module_count}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Packed modules detail */}
+                {(actualCompareData.packed_sample || []).length > 0 && (
+                  <div className="ro-breakdown-section">
+                    <h4>✅ Packed Modules Detail (first {(actualCompareData.packed_sample || []).length})</h4>
+                    <div className="status-table-scroll">
+                      <table>
+                        <thead>
+                          <tr><th>Serial</th><th>Packing Date</th><th>Pallet No.</th><th>Box No.</th><th>Running Order</th></tr>
+                        </thead>
+                        <tbody>
+                          {(actualCompareData.packed_sample || []).slice(0, 100).map((item, i) => (
+                            <tr key={`pk-${item.serial}-${i}`}>
+                              <td className="mono">{item.serial}</td>
+                              <td>{item.packing_date || '-'}</td>
+                              <td>{item.pallet_no || '-'}</td>
+                              <td>{item.box_no || '-'}</td>
+                              <td>{item.running_order || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Not packed (pending) modules */}
+                {(actualCompareData.pending_sample || []).length > 0 && (
+                  <div className="ro-breakdown-section">
+                    <h4>⚠️ Not Packed Modules (first {(actualCompareData.pending_sample || []).length})</h4>
+                    <p className="muted">Ye barcodes actual PDI me the lekin pack nahi hue.</p>
+                    <div className="status-table-scroll">
+                      <table>
+                        <thead>
+                          <tr><th>#</th><th>Serial</th></tr>
+                        </thead>
+                        <tbody>
+                          {(actualCompareData.pending_sample || []).slice(0, 100).map((s, i) => (
+                            <tr key={`pend-${s}-${i}`}>
+                              <td>{i + 1}</td>
+                              <td className="mono">{s}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

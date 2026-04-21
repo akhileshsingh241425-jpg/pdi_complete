@@ -3001,6 +3001,7 @@ def pdi_actual_compare():
         body = request.get_json(silent=True) or {}
         pdi_id = str(body.get('pdi_id') or '').strip()
         party_id = str(body.get('party_id') or '').strip()
+        party_name = str(body.get('party_name') or '').strip()
         actual_raw = body.get('actual_barcodes') or []
         if not pdi_id or not party_id:
             return jsonify({"success": False, "error": "pdi_id and party_id required"}), 400
@@ -3137,7 +3138,8 @@ def pdi_actual_compare():
                                         'pallet_no': pallet_no,
                                         'vehicle_no': d.get('vehicle_no') or 'Unknown',
                                         'dispatch_date': d.get('dispatch_date') or d.get('date', ''),
-                                        'invoice_no': d.get('invoice_no', '')
+                                        'invoice_no': d.get('invoice_no', ''),
+                                        'dispatch_party': d.get('dispatch_party', '') or d.get('party_name', '') or party_name
                                     }
                 page += 1
             except Exception:
@@ -3171,7 +3173,9 @@ def pdi_actual_compare():
                     return ('packed', serial, {
                         'packing_date': pack.get('packing_date'),
                         'box_no': pack.get('box_no', ''),
-                        'pallet_no': pack.get('pallet_no', '')
+                        'pallet_no': pack.get('pallet_no', ''),
+                        'running_order': pack.get('running_order', '') or pack.get('ro_no', '') or '',
+                        'packed_party': pack.get('party_name', '') or pack.get('packed_party', '') or pack.get('customer_name', '') or ''
                     })
                 return ('pending', serial, None)
             except Exception:
@@ -3197,6 +3201,55 @@ def pdi_actual_compare():
             planned_wattage = 0
         planned_kw = round(planned_wattage * planned_total / 1000.0, 2)
         actual_kw = round(planned_wattage * actual_total / 1000.0, 2)
+
+        # Running Order breakdown: group packed barcodes by running_order
+        ro_packed_map = {}   # ro_label -> list of packed serials
+        ro_unknown_packed = []
+        for s in packed_set:
+            info = packed_info.get(s) or {}
+            ro = (info.get('running_order') or '').strip()
+            if ro:
+                ro_packed_map.setdefault(ro, []).append(s)
+            else:
+                ro_unknown_packed.append(s)
+        if ro_unknown_packed:
+            ro_packed_map['Unknown RO'] = ro_unknown_packed
+
+        running_order_breakdown = []
+        for ro_label, ro_serials in sorted(ro_packed_map.items()):
+            running_order_breakdown.append({
+                'running_order': ro_label,
+                'packed_count': len(ro_serials),
+                'serials_sample': ro_serials[:50]
+            })
+        running_order_breakdown.sort(key=lambda x: x['packed_count'], reverse=True)
+
+        # Dispatch breakdown: group dispatched barcodes by vehicle/pallet
+        # dispatch_party is already available in mrp_lookup from party-dispatch-history.php
+        dispatch_vehicle_map = {}
+        for s in actual_dispatched:
+            info = mrp_lookup.get(s) or {}
+            key = info.get('vehicle_no') or 'Unknown Vehicle'
+            dispatch_vehicle_map.setdefault(key, {
+                'vehicle_no': key,
+                'dispatch_date': info.get('dispatch_date', ''),
+                'invoice_no': info.get('invoice_no', ''),
+                'dispatch_party': info.get('dispatch_party', '') or party_name,
+                'barcodes': []
+            })
+            dispatch_vehicle_map[key]['barcodes'].append(s)
+
+        dispatch_breakdown = []
+        for veh, vdata in dispatch_vehicle_map.items():
+            dispatch_breakdown.append({
+                'vehicle_no': vdata['vehicle_no'],
+                'dispatch_date': vdata['dispatch_date'],
+                'invoice_no': vdata['invoice_no'],
+                'dispatch_party': vdata['dispatch_party'],
+                'module_count': len(vdata['barcodes']),
+                'serials_sample': vdata['barcodes'][:50]
+            })
+        dispatch_breakdown.sort(key=lambda x: x['module_count'], reverse=True)
 
         return jsonify({
             "success": True,
@@ -3227,6 +3280,8 @@ def pdi_actual_compare():
                 "count": len(v),
                 "serials_sample": v[:50]
             } for k, v in missing_other_owners.items()],
+            "running_order_breakdown": running_order_breakdown,   # per-RO packed count
+            "dispatch_breakdown": dispatch_breakdown,              # per-vehicle dispatched count
             "matched_sample": sorted(list(matched))[:200],
             "missing_sample": sorted(list(missing))[:200],
             "extras_sample": sorted(list(extras))[:200],

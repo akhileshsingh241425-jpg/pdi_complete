@@ -2713,9 +2713,12 @@ def pdi_status(pdi_id):
     cache = pdi_status.__dict__.setdefault('_cache', {})
     cache_key = f"{pdi_id}|{party_id}|{days}"
     now = time.time()
+    # 10 min response cache — short enough that fresh dispatches/packs show up
+    # quickly, long enough that repeat clicks are instant. Use ?force=1 to bust.
+    PDI_STATUS_TTL = 600
     if not force and cache_key in cache:
         entry = cache[cache_key]
-        if (now - entry['timestamp']) < 300:
+        if (now - entry['timestamp']) < PDI_STATUS_TTL:
             return jsonify({**entry['data'], "cached": True})
 
     # ===== 1. Get PDI barcodes =====
@@ -2806,7 +2809,12 @@ def pdi_status(pdi_id):
     # workers + keep-alive HTTP session keeps this fast on repeat calls.
     from concurrent.futures import ThreadPoolExecutor, as_completed
     pack_cache = pdi_status.__dict__.setdefault('_pack_cache', {})
-    PACK_TTL = 1800
+    # Smart TTL by state:
+    #   packed  — terminal (a packed barcode never goes back to pending) → 24h
+    #   pending — may flip to packed any moment              → 15 min
+    # Nightly warmer (02:00–05:00) repopulates everything fresh.
+    PACK_TTL_PACKED = 24 * 3600
+    PACK_TTL_PENDING = 15 * 60
 
     packed_set = set()
     pending_set = set()
@@ -2817,12 +2825,14 @@ def pdi_status(pdi_id):
     to_check = []
     for s in not_disp_list:
         entry = pack_cache.get(s)
-        if entry and (now - entry['t']) < PACK_TTL:
-            if entry['status'] == 'packed':
-                packed_set.add(s)
-                packed_info[s] = entry.get('info') or {}
-            else:
-                pending_set.add(s)
+        age = (now - entry['t']) if entry else None
+        if entry and entry['status'] == 'packed' and age < PACK_TTL_PACKED:
+            # Packed is terminal — trust the cache for a full day.
+            packed_set.add(s)
+            packed_info[s] = entry.get('info') or {}
+        elif entry and entry['status'] == 'pending' and age < PACK_TTL_PENDING:
+            # Pending is volatile — only trust for 15 min.
+            pending_set.add(s)
         else:
             to_check.append(s)
 

@@ -572,7 +572,7 @@ const PartyReallocationPlanner = () => {
   };
 
   // Fetch full Rays-style status for a PDI (bulk party-dispatch history intersection)
-  const fetchPdiStatus = async (pdiIdValue) => {
+  const fetchPdiStatus = async (pdiIdValue, opts = {}) => {
     const pid = String(pdiIdValue || '').trim();
     if (!pid) return;
     const partyId = detailPartyId || activePartyId;
@@ -591,7 +591,8 @@ const PartyReallocationPlanner = () => {
     setActualCompareData(null);
     setSavedBarcodesMeta(null);
     try {
-      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}?party_id=${encodeURIComponent(partyId)}`);
+      const forceParam = opts.force ? '&force=1' : '';
+      const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}?party_id=${encodeURIComponent(partyId)}${forceParam}`);
       const data = await resp.json();
       if (!resp.ok || !data?.success) {
         throw new Error(data?.error || 'Failed to fetch PDI status');
@@ -1477,6 +1478,21 @@ const PartyReallocationPlanner = () => {
                 </p>
               </div>
               <button type="button" className="back-btn" onClick={closePdiStatus}>Close</button>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', margin: '8px 0', gap: 8, alignItems: 'center' }}>
+              {pdiStatusData.cached && (
+                <span style={{ fontSize: 12, color: '#666' }}>⚡ cached — click refresh for latest</span>
+              )}
+              <button
+                type="button"
+                className="back-btn"
+                onClick={() => fetchPdiStatus(pdiStatusActiveId, { force: true })}
+                disabled={pdiStatusLoading}
+                title="Bypass cache and re-check every barcode against MRP now"
+              >
+                {pdiStatusLoading ? 'Refreshing…' : '↻ Refresh latest'}
+              </button>
             </div>
 
             <div className="status-cards-grid">

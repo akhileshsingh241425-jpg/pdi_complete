@@ -229,4 +229,12 @@ def create_app():
     except Exception as e:
         print(f"[startup] db_pool warm skipped: {e}")
 
+    # Nightly PDI cache warmer (02:00 → 05:00). Pre-loads pack-status for
+    # every PDI of every party so next-day requests are instant.
+    try:
+        from app.utils.cache_warmer import start_warmer
+        start_warmer(app)
+    except Exception as e:
+        print(f"[startup] cache warmer skipped: {e}")
+
     return app

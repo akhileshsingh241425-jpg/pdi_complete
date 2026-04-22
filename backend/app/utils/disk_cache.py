@@ -15,6 +15,7 @@ import json
 import os
 import threading
 import time
+import copy
 
 _CACHE_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -43,10 +44,27 @@ def _load(path: str) -> dict:
 
 def _save(path: str, data: dict) -> None:
     tmp = path + '.tmp'
+    # Cache dictionaries are updated by multiple request/warmer threads.
+    # Take a stable snapshot first, then persist atomically.
+    snapshot = None
+    for _ in range(5):
+        try:
+            snapshot = copy.deepcopy(data)
+            break
+        except RuntimeError as e:
+            # e.g. "dictionary changed size during iteration"
+            if 'changed size during iteration' in str(e):
+                time.sleep(0.02)
+                continue
+            raise
+    if snapshot is None:
+        print(f"[disk_cache] save {path} failed: could not snapshot cache after retries")
+        return
+
     try:
         with _lock:
             with open(tmp, 'w', encoding='utf-8') as f:
-                json.dump(data, f)
+                json.dump(snapshot, f)
             os.replace(tmp, path)
     except Exception as e:
         print(f"[disk_cache] save {path} failed: {e}")

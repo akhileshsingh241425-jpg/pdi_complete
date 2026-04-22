@@ -702,6 +702,23 @@ PARTY_IDS = {
 }
 
 
+# party_id -> list of party_name variants accepted by the bulk packing API
+# (get_barcode_tracking.php with {"party_name": "..."}).
+# Each variant is a separate call; results merged.
+PARTY_PACKING_NAMES = {
+    '931db2c5-b016-4914-b378-69e9f22562a7': [
+        'RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi'
+    ],
+    'a005562f-568a-46e9-bf2e-700affb171e8': [
+        'LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T',
+        'LARSEN & TOUBRO LIMITED', 'LARSEN AND TOUBRO'
+    ],
+    '141b81a0-2bab-4790-b825-3c8734d41484': [
+        'STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'S&W', 'S&W - NTPC'
+    ],
+}
+
+
 def get_mrp_party_name_ftr(local_name):
     """Map local company name to MRP full party name"""
     if local_name in COMPANY_NAME_MAP:
@@ -2823,82 +2840,164 @@ def pdi_status(pdi_id):
     dispatched_set = pdi_barcode_set & set(mrp_lookup.keys())
     not_dispatched_set = pdi_barcode_set - dispatched_set
 
-    # ===== 3b. Detect packed (not dispatched) via per-barcode tracking API =====
-    # Cache per barcode for 30 min to avoid re-hitting upstream.
-    # NO CAP — every undispatched barcode is checked. Cache + 12 parallel
-    # workers + keep-alive HTTP session keeps this fast on repeat calls.
-    from concurrent.futures import ThreadPoolExecutor, as_completed
+    # ===== 3b. Detect packed (not dispatched) via BULK packing API =====
+    # ONE call to get_barcode_tracking.php with {"party_name": "..."} returns
+    # ALL packed barcodes for that party (200k+ rows in ~4 sec).
+    # Cached on disk per party_name for 30 min — repeat PDIs of same party
+    # are then near-instant (just a set intersection).
     pack_cache = pdi_status.__dict__.get('_pack_cache')
     if pack_cache is None:
         pack_cache = disk_cache.load_pack_cache()
         pdi_status.__dict__['_pack_cache'] = pack_cache
-    # Smart TTL by state:
-    #   packed  — terminal (a packed barcode never goes back to pending) → 24h
-    #   pending — may flip to packed any moment              → 15 min
-    # Nightly warmer (02:00–05:00) repopulates everything fresh.
-    PACK_TTL_PACKED = 24 * 3600
-    PACK_TTL_PENDING = 15 * 60
+    party_pack_cache = pdi_status.__dict__.get('_party_pack_cache')
+    if party_pack_cache is None:
+        party_pack_cache = disk_cache.load_party_packing_cache()
+        pdi_status.__dict__['_party_pack_cache'] = party_pack_cache
+
+    PARTY_PACKING_TTL = 1800  # 30 min — bulk packing data per party
 
     packed_set = set()
     pending_set = set()
     packed_info = {}
     pack_unknown = 0
 
-    not_disp_list = list(not_dispatched_set)
-    to_check = []
-    for s in not_disp_list:
-        entry = pack_cache.get(s)
-        age = (now - entry['t']) if entry else None
-        if entry and entry['status'] == 'packed' and age < PACK_TTL_PACKED:
-            # Packed is terminal — trust the cache for a full day.
-            packed_set.add(s)
-            packed_info[s] = entry.get('info') or {}
-        elif entry and entry['status'] == 'pending' and age < PACK_TTL_PENDING:
-            # Pending is volatile — only trust for 15 min.
-            pending_set.add(s)
-        else:
-            to_check.append(s)
+    party_packing_names = PARTY_PACKING_NAMES.get(party_id, [])
 
-    def _check_pack(serial):
-        try:
-            r = http_requests.post(
-                'https://umanmrp.in/api/get_barcode_tracking.php',
-                data={'barcode': serial}, timeout=5  # fast fail; warmer will catch later
-            )
-            if r.status_code != 200:
-                return ('unknown', serial, None)
-            d = r.json()
-            if not d.get('success') or not d.get('data'):
-                return ('pending', serial, None)
-            pack = (d['data'] or {}).get('packing') or {}
-            if pack.get('packing_date'):
-                return ('packed', serial, {
-                    'packing_date': pack.get('packing_date'),
-                    'box_no': pack.get('box_no', ''),
-                    'pallet_no': pack.get('pallet_no', '')
-                })
-            return ('pending', serial, None)
-        except Exception:
-            return ('unknown', serial, None)
+    if party_packing_names:
+        # FAST PATH: bulk fetch (one HTTP call per party_name variant)
+        all_packed = {}  # serial -> {pallet_no, packing_date, box_no}
+        any_fetched = False
+        for pname in party_packing_names:
+            pentry = party_pack_cache.get(pname)
+            if (not force) and pentry and (now - pentry.get('timestamp', 0)) < PARTY_PACKING_TTL:
+                for b, info in (pentry.get('data') or {}).items():
+                    all_packed[b] = info
+                continue
+            try:
+                r = http_requests.post(
+                    'https://umanmrp.in/api/get_barcode_tracking.php',
+                    json={'party_name': pname},
+                    timeout=60
+                )
+                if r.status_code != 200:
+                    print(f"[PDI Status] bulk packing {pname}: HTTP {r.status_code}")
+                    # use whatever stale entry we have
+                    if pentry:
+                        for b, info in (pentry.get('data') or {}).items():
+                            all_packed[b] = info
+                    continue
+                d = r.json()
+                if d.get('status') != 'success':
+                    print(f"[PDI Status] bulk packing {pname}: status={d.get('status')}")
+                    if pentry:
+                        for b, info in (pentry.get('data') or {}).items():
+                            all_packed[b] = info
+                    continue
+                party_data = {}
+                for item in (d.get('data') or []):
+                    b = (item.get('barcode') or '').strip().upper()
+                    if not b:
+                        continue
+                    # Only count rows that are still PACKED (not yet dispatched).
+                    if (item.get('status') or '').lower() != 'packed':
+                        continue
+                    party_data[b] = {
+                        'packing_date': item.get('date', '') or '',
+                        'box_no': item.get('running_order', '') or '',
+                        'pallet_no': item.get('pallet_no', '') or ''
+                    }
+                party_pack_cache[pname] = {'timestamp': now, 'data': party_data}
+                all_packed.update(party_data)
+                any_fetched = True
+                print(f"[PDI Status] bulk packing {pname}: {len(party_data)} packed barcodes")
+            except Exception as e:
+                print(f"[PDI Status] bulk packing {pname} error: {e}")
+                if pentry:
+                    for b, info in (pentry.get('data') or {}).items():
+                        all_packed[b] = info
 
-    if to_check:
-        with ThreadPoolExecutor(max_workers=20) as ex:
-            for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
-                status, serial, info = f.result()
-                if status == 'packed':
-                    packed_set.add(serial)
-                    packed_info[serial] = info or {}
-                    pack_cache[serial] = {'t': now, 'status': 'packed', 'info': info}
-                elif status == 'pending':
-                    pending_set.add(serial)
-                    pack_cache[serial] = {'t': now, 'status': 'pending'}
-                else:
-                    pack_unknown += 1
-        # Persist pack_cache so pm2 restart doesn't lose this batch.
+        # Persist updated bulk cache
+        if any_fetched:
+            try:
+                disk_cache.save_party_packing_cache(party_pack_cache)
+            except Exception:
+                pass
+
+        # Intersect with PDI's undispatched barcodes — instant, in-memory
+        packed_set = not_dispatched_set & set(all_packed.keys())
+        pending_set = not_dispatched_set - packed_set
+        for s in packed_set:
+            packed_info[s] = all_packed[s]
+            # also seed per-barcode pack_cache so warmer / fallback are consistent
+            pack_cache[s] = {'t': now, 'status': 'packed', 'info': all_packed[s]}
+        for s in pending_set:
+            pack_cache[s] = {'t': now, 'status': 'pending'}
         try:
             disk_cache.save_pack_cache(pack_cache)
         except Exception:
             pass
+
+    else:
+        # FALLBACK PATH (party_id not in PARTY_PACKING_NAMES): per-barcode loop.
+        # Smart TTL by state:
+        #   packed  — terminal (a packed barcode never goes back to pending) → 24h
+        #   pending — may flip to packed any moment              → 15 min
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        PACK_TTL_PACKED = 24 * 3600
+        PACK_TTL_PENDING = 15 * 60
+
+        not_disp_list = list(not_dispatched_set)
+        to_check = []
+        for s in not_disp_list:
+            entry = pack_cache.get(s)
+            age = (now - entry['t']) if entry else None
+            if entry and entry['status'] == 'packed' and age < PACK_TTL_PACKED:
+                packed_set.add(s)
+                packed_info[s] = entry.get('info') or {}
+            elif entry and entry['status'] == 'pending' and age < PACK_TTL_PENDING:
+                pending_set.add(s)
+            else:
+                to_check.append(s)
+
+        def _check_pack(serial):
+            try:
+                r = http_requests.post(
+                    'https://umanmrp.in/api/get_barcode_tracking.php',
+                    data={'barcode': serial}, timeout=5
+                )
+                if r.status_code != 200:
+                    return ('unknown', serial, None)
+                d = r.json()
+                if not d.get('success') or not d.get('data'):
+                    return ('pending', serial, None)
+                pack = (d['data'] or {}).get('packing') or {}
+                if pack.get('packing_date'):
+                    return ('packed', serial, {
+                        'packing_date': pack.get('packing_date'),
+                        'box_no': pack.get('box_no', ''),
+                        'pallet_no': pack.get('pallet_no', '')
+                    })
+                return ('pending', serial, None)
+            except Exception:
+                return ('unknown', serial, None)
+
+        if to_check:
+            with ThreadPoolExecutor(max_workers=20) as ex:
+                for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
+                    status, serial, info = f.result()
+                    if status == 'packed':
+                        packed_set.add(serial)
+                        packed_info[serial] = info or {}
+                        pack_cache[serial] = {'t': now, 'status': 'packed', 'info': info}
+                    elif status == 'pending':
+                        pending_set.add(serial)
+                        pack_cache[serial] = {'t': now, 'status': 'pending'}
+                    else:
+                        pack_unknown += 1
+            try:
+                disk_cache.save_pack_cache(pack_cache)
+            except Exception:
+                pass
 
     skipped_pack_check = 0  # no cap — kept for response shape compat
 

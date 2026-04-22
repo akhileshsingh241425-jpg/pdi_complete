@@ -26,6 +26,7 @@ os.makedirs(_CACHE_DIR, exist_ok=True)
 _PACK_FILE = os.path.join(_CACHE_DIR, 'pack_cache.json')
 _PDI_FILE = os.path.join(_CACHE_DIR, 'pdi_status_cache.json')
 _PARTY_DISPATCH_FILE = os.path.join(_CACHE_DIR, 'party_dispatch_cache.json')
+_PARTY_PACKING_FILE = os.path.join(_CACHE_DIR, 'party_packing_cache.json')
 
 _lock = threading.Lock()
 
@@ -97,3 +98,18 @@ def load_party_dispatch_cache() -> dict:
 
 def save_party_dispatch_cache(cache: dict) -> None:
     _save(_PARTY_DISPATCH_FILE, cache)
+
+
+def load_party_packing_cache() -> dict:
+    """{ 'party_name': {'timestamp': ts, 'data': {serial: {pallet_no, packing_date, box_no}}} }
+
+    Bulk packing data fetched from get_barcode_tracking.php with party_name.
+    One call returns ALL packed barcodes for that party — much faster than per-barcode lookups.
+    """
+    d = _load(_PARTY_PACKING_FILE)
+    print(f"[disk_cache] loaded party-packing cache for {len(d)} parties")
+    return d
+
+
+def save_party_packing_cache(cache: dict) -> None:
+    _save(_PARTY_PACKING_FILE, cache)

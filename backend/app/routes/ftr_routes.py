@@ -5626,10 +5626,16 @@ def _startup_warm_caches():
         print(f"[startup-warm] failed: {e}")
 
 
-try:
-    import threading as _th
-    _th.Thread(target=_startup_warm_caches, daemon=True).start()
-    print("[startup-warm] scheduled (T+5s)")
-except Exception as _e:
-    print(f"[startup-warm] could not schedule: {_e}")
+# Startup warmer DISABLED — was causing crash-loop (504 restarts, uptime 8s).
+# Re-enable by setting env var ENABLE_STARTUP_WARM=1
+import os as _os_warm
+if _os_warm.environ.get('ENABLE_STARTUP_WARM', '').lower() in ('1', 'true', 'yes'):
+    try:
+        import threading as _th
+        _th.Thread(target=_startup_warm_caches, daemon=True).start()
+        print("[startup-warm] scheduled (T+5s)")
+    except Exception as _e:
+        print(f"[startup-warm] could not schedule: {_e}")
+else:
+    print("[startup-warm] DISABLED (set ENABLE_STARTUP_WARM=1 to enable)")
 

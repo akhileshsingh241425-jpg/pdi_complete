@@ -1,0 +1,495 @@
+pass,pdi_id,pdi_name,party_name,status,elapsed_s,total_barcodes,packed,dispatched,cached,stale,warning,error
+1,21, RO-3 18-Aug 41865,BONDADA ENGINEERING LIMITED,200,8.81,41865,0,41865,False,,,
+1,56, RO-4 25-Oct 50848,BONDADA ENGINEERING LIMITED,200,2.14,50848,0,50770,False,,,
+1,138,R-4 25-Feb 40984,BONDADA ENGINEERING LIMITED,200,2.16,39179,32,39103,False,,,
+1,154,R-5 24.54MW (610W),BONDADA ENGINEERING LIMITED,502,0.11,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,155,R-6 31.17MW (610W),BONDADA ENGINEERING LIMITED,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,14,RO-2 17-jul 33051,BONDADA ENGINEERING LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,187,R-1 17 Apr (988),EAPRO GLOBAL ENERGY PRIVATE LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,81,R-1 28-Nov 13581,ENRICH ENERGY PVT. LTD.,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,133,R-2 19-FEB (6350),ENRICH ENERGY PVT. LTD.,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,164,EVVO SOLAR - (EVVO-Logo & Outer RFID) 630W,EVOLVE GREEN ENERGIES PRIVATE LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,140,EVVO SOLAR - (GSPL-Logo & inner RFID),EVOLVE GREEN ENERGIES PRIVATE LIMITED,502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,189,Gautam Solar 630W,GAUTAM SOLAR PVT LTD,502,0.19,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,198,Gautam Solar 640 wp,GAUTAM SOLAR PVT LTD,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,78,testgautam1,GAUTAM SOLAR PVT LTD,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,84,R-1 26-Oct 20762,GO SOLAR ENERGY SOLUTION PRIVATE LIMITED,502,0.24,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,167,IP 30MW (50848),ILIOS POWER PRIVATE LIMITED,502,0.17,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,188,R-1 20MW,ILIOS POWER PRIVATE LIMITED,502,0.17,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,195,R-5 20MW,ILIOS POWER PRIVATE LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,79, R-8 26-Nov 15000,INDUS TOWERS LIMITED HYDERABAD,200,10.51,15000,0,2250,False,,,
+1,126,"R-10 17-Jan (15,000)",INDUS TOWERS LIMITED HYDERABAD,200,1.86,15000,0,1130,False,,,
+1,130,R-11 11-Feb (15000),INDUS TOWERS LIMITED HYDERABAD,200,1.98,15000,0,800,False,,,
+1,186,R-12 16 Apr (15000),INDUS TOWERS LIMITED HYDERABAD,200,1.9,15000,0,0,False,,,
+1,34,R-4 01-sep 10000,INDUS TOWERS LIMITED HYDERABAD,200,1.5,10000,0,830,False,,,
+1,45,R-5 01-Oct 10000,INDUS TOWERS LIMITED HYDERABAD,200,0.3,10000,0,820,True,,,
+1,59,R-6 27-Oct 10000,INDUS TOWERS LIMITED HYDERABAD,200,2.91,10000,0,2540,False,,,
+1,70,R-7 13-Nov 10000,INDUS TOWERS LIMITED HYDERABAD,200,1.5,10000,0,60,False,,,
+1,92,"R-9 18-Dec (10,000)",INDUS TOWERS LIMITED HYDERABAD,200,1.82,10000,0,1370,False,,,
+1,80,R-1 630Wp 15-Nov 13422,JOTTER RENEWABLES PRIVATE LIMITED,502,4.63,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,9,KPI PDI 1,KPI GREEN ENERGY LIMITED,502,0.55,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,11,KPI PDI 2,KPI GREEN ENERGY LIMITED,502,0.21,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,135,R-10.1 21-Feb (79376),KPI GREEN ENERGY LIMITED,502,0.21,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,136,R-10.2 22-Feb (79376),KPI GREEN ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,173,R-11 (Coal India) 50MW-79392pcs,KPI GREEN ENERGY LIMITED,502,0.19,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,176,R-11.2 5MW (Coal India),KPI GREEN ENERGY LIMITED,502,28.74,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,190,R-12 KPI - GUVNL Project (30MW),KPI GREEN ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,31,R-4 05-Sept 23739,KPI GREEN ENERGY LIMITED,502,0.19,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,55,R-5 630wp 24-Oct 150800,KPI GREEN ENERGY LIMITED,502,0.19,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,62,R-6 CI 630wp 29-Oct 40000,KPI GREEN ENERGY LIMITED,502,0.2,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,63,R-6.2 CI 630wp 29-Oct 39709,KPI GREEN ENERGY LIMITED,502,0.17,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,89,R-7 13-Dec (79366),KPI GREEN ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,111,R-8  8-Jan (79366),KPI GREEN ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,112,R-8.2 8-Jan (79366),KPI GREEN ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,131,R-9 12-Feb (79392),KPI GREEN ENERGY LIMITED,502,28.46,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,83,R-1 630Wp 1-Dec 35000,"LARSEN & TOUBRO LIMITED, INFRASTRUCTURE",502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,123,R-2 630Wp 1-Dec 40000,"LARSEN & TOUBRO LIMITED, INFRASTRUCTURE",502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,129,R-3 (63520) 40MW,"LARSEN & TOUBRO LIMITED, INFRASTRUCTURE",502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,146,R-4 (39712) 25MW,"LARSEN & TOUBRO LIMITED, INFRASTRUCTURE",502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,150,R-4.2 (7936) 5MW,"LARSEN & TOUBRO LIMITED, INFRASTRUCTURE",502,0.29,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,158,R-5 30MW (47648),"LARSEN & TOUBRO LIMITED, INFRASTRUCTURE",502,0.15,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,57,R-1 27-Oct 6240,MATHURESH SYNERGY PVT LTD,502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,58,R-1 27-Oct 6240,MATHURESH SYNERGY PVT LTD,200,28.42,0,0,0,False,,,
+1,26,R-1 27-Aug 35000,MEGHA ENGINEERING AND INFRASTRUCTURES LIMITED,502,0.34,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,38,R-2 27-Aug 35000,MEGHA ENGINEERING AND INFRASTRUCTURES LIMITED,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,120,R-3 (11833),MEGHA ENGINEERING AND INFRASTRUCTURES LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,60,R-1 28-Oct 26441 ,MOGLI LABS (INDIA) PRIVATE LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,72,R-2 17-Oct 1530,MOGLI LABS (INDIA) PRIVATE LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,182,R-1 12 Apr (3810),NEVRONAS SOLAR PRIVATE LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,184,R-2 14 Apr (3810),NEVRONAS SOLAR PRIVATE LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,185,R-3 14 Apr (3810),NEVRONAS SOLAR PRIVATE LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,183,R-4 14Apr. (7870)- 610wp,NEVRONAS SOLAR PRIVATE LIMITED,502,0.21,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,6,Oriana 2,ORIANA POWER LIMITED,502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,22,Oriana 3,ORIANA POWER LIMITED,502,0.21,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,8,Oriana Kusum Rajasthan,ORIANA POWER LIMITED,502,28.34,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,39,R-4 22-Sept 6836,ORIANA POWER LIMITED,502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,137,R-5 630W (19049),ORIANA POWER LIMITED,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,157,R-6 (630W) ,ORIANA POWER LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,163,R-7 (38100) 630W,ORIANA POWER LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,99,R-1 20-Dec (87378),PERIMETER SOLUTIONS,502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,10,Quant 1600 mm Cable,QUANT SOLAR,502,0.15,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,68,R-2 590wp 9-Nov 12000,QUANT SOLAR,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,67,R-1 625wp 29-Oct 28400,RAYS POWER INFRA LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,85,R-3 29-Oct 48117,RAYS POWER INFRA LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,143,R-4 20MW 3-Mar,RAYS POWER INFRA LIMITED,502,28.73,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,125,R-4.1 15-Jan 98040,RAYS POWER INFRA LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,151,R-4.2 (13075),RAYS POWER INFRA LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,144,R-5 630W (18922),RAYS POWER INFRA LIMITED,502,0.15,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,145,R-6 620W (14780),RAYS POWER INFRA LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,161,RAYS NTPC BARETHI R-1 (28003),RAYS POWER INFRA LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,162,RAYS NTPC BARETHI R-2 (23336),RAYS POWER INFRA LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,7,Redington 3,REDINGTON LIMITED RAJASTHAN,502,0.15,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,148,R-1 630W,RENEWPRO ENERGY PVT. LTD.,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,16,R-1 21-jul 8475,RENNY STRIPS PVT LTD,502,0.17,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,18,R-2 02-Aug 43717,RENNY STRIPS PVT LTD,502,0.15,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,132,RMC-13833 19-Feb,RMC SWITCH GEARS LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,141,R-1 28-Feb. 31928,S/W NTPC PDI-5,502,28.3,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,47, R-1 24-june 3627,SARIKA NHPC,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,20,SHANTI ENTERPRISES ELECTRICALS PVT LTD,SHANTI ENTERPRISES ELECTRICALS PVT. LTD.,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,76,R-2.2 27-Oct 25000,STERLING AND WILSON RENEWABLE ENERGY LIMITED,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,87,"R-2.3 5-Dec (25,000)",STERLING AND WILSON RENEWABLE ENERGY LIMITED,502,0.16,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,100,R-3.0 22-Dec (25000),STERLING AND WILSON RENEWABLE ENERGY LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,110,R-4.1 30-DEC (25000),STERLING AND WILSON RENEWABLE ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,113,R-5 9-Jan (25000),STERLING AND WILSON RENEWABLE ENERGY LIMITED,502,0.18,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,127,R-6 17-Jan (22980),STERLING AND WILSON RENEWABLE ENERGY LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,134,"R-7 21- Feb (47,648)",STERLING AND WILSON RENEWABLE ENERGY LIMITED,200,10.63,47648,40,47558,False,,,
+1,149,R-7.1 (7936) ,STERLING AND WILSON RENEWABLE ENERGY LIMITED,200,1.88,7912,0,7903,False,,,
+1,152,R-7.2 (7936) ,STERLING AND WILSON RENEWABLE ENERGY LIMITED,200,1.59,7936,0,7926,False,,,
+1,156,R-7.3 10MW,STERLING AND WILSON RENEWABLE ENERGY LIMITED,200,1.91,14944,0,14924,False,,,
+1,160,R-8 NTPC (34944),STERLING AND WILSON RENEWABLE ENERGY LIMITED,200,2.21,34944,32,34815,False,,,
+1,175,R-9 (47648) 30MW,STERLING AND WILSON RENEWABLE ENERGY LIMITED,200,2.33,47648,8096,0,False,,,
+1,179,R-1 13-Apr (4500),SU-KAM POWER SYSTEMS LTD,502,8.3,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,44,KPI Sundrops 26 Sep,SUNDROPS ENERGIA PRIVATE LIMITED,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,90,"R-2 16-Dec (26,200) 595Wp",SUNDROPS ENERGIA PRIVATE LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,142,R-3 610W 2-Mar,SUNDROPS ENERGIA PRIVATE LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,147,R-4 (24917) 10-Mar,SUNDROPS ENERGIA PRIVATE LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,153,R-5 610W (14.4MW),SUNDROPS ENERGIA PRIVATE LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,82,R-1 29-Oct 8255,TERAVON GREEN ENERGIES LIMITED,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,128,testBinning,TEST,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,108,testonemore,TEST,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,139,testparty,TEST,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,104,testpdireject,TEST,502,0.14,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,106,testwithout,TEST,502,0.12,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,165,Testing (Rfid),TEST KUL PARTY,502,28.24,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,174,2560pcs-300mm,VIDYUT ENERGY SYSTEMS PRIVATE LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"
+1,169,R-1 (4000)-500mm,VIDYUT ENERGY SYSTEMS PRIVATE LIMITED,502,0.13,0,0,0,,,,"<html>
+<head><title>502 Bad Gateway</title></head>
+<body>
+<center><h1>502 Bad Gateway</h1></center>
+<hr><center>ngin"

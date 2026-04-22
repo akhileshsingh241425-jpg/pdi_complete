@@ -4133,6 +4133,196 @@ _PARTIES_PDI_CACHE_TTL = 900          # 15 min fresh window
 _PARTIES_PDI_CACHE_MAX_AGE = 86400    # serve stale up to 24h
 _PARTIES_PDI_REFRESH_LOCK = False     # simple in-process guard
 
+# Pre-warm guards
+_PACK_WARM_LOCK = False
+_DISP_WARM_LOCK = False
+_PACK_WARM_TTL = 1500   # 25 min — re-warm a party slightly before 30-min cache expires
+_DISP_WARM_TTL = 1500
+
+
+def _warm_party_packing_caches_bg(parties):
+    """Pre-fetch bulk packing data for every party so request handlers
+    NEVER need to do the slow first call (which used to hang 28+ sec and
+    cause nginx 502 cascades). Runs on a small thread pool.
+    """
+    global _PACK_WARM_LOCK
+    if _PACK_WARM_LOCK or not parties:
+        return
+    _PACK_WARM_LOCK = True
+    try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from app.utils import disk_cache as _dc
+
+        # Use the same in-process cache dict the request handler reads
+        cache = pdi_status.__dict__.get('_party_pack_cache')
+        if cache is None:
+            cache = _dc.load_party_packing_cache()
+            pdi_status.__dict__['_party_pack_cache'] = cache
+
+        now = time.time()
+
+        def warm_one(party):
+            pname = (party.get('companyName') or '').strip()
+            if not pname:
+                return None
+            entry = cache.get(pname)
+            if entry and (now - entry.get('timestamp', 0)) < _PACK_WARM_TTL:
+                return None  # still fresh
+            try:
+                r = http_requests.post(
+                    'https://umanmrp.in/api/get_barcode_tracking.php',
+                    json={'party_name': pname},
+                    timeout=60
+                )
+                if r.status_code != 200:
+                    return None
+                d = r.json()
+                if d.get('status') != 'success':
+                    return None
+                party_data = {}
+                for item in (d.get('data') or []):
+                    b = (item.get('barcode') or '').strip().upper()
+                    if not b:
+                        continue
+                    if (item.get('status') or '').lower() != 'packed':
+                        continue
+                    party_data[b] = {
+                        'packing_date': item.get('date', '') or '',
+                        'box_no': item.get('running_order', '') or '',
+                        'pallet_no': item.get('pallet_no', '') or ''
+                    }
+                cache[pname] = {'timestamp': time.time(), 'data': party_data}
+                return (pname, len(party_data))
+            except Exception as e:
+                print(f"[warm-pack] {pname}: {e}")
+                return None
+
+        warmed = 0
+        # 4 workers — gentle on upstream MRP, completes 33 parties in ~60s
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            futures = [ex.submit(warm_one, p) for p in parties]
+            for f in as_completed(futures):
+                r = f.result()
+                if r:
+                    warmed += 1
+                    print(f"[warm-pack] {r[0]}: {r[1]} packed barcodes")
+
+        try:
+            _dc.save_party_packing_cache(cache)
+        except Exception:
+            pass
+        if warmed:
+            print(f"[warm-pack] DONE: warmed {warmed}/{len(parties)} parties")
+    except Exception as e:
+        print(f"[warm-pack] failed: {e}")
+    finally:
+        _PACK_WARM_LOCK = False
+
+
+def _warm_party_dispatch_caches_bg(parties, days=180):
+    """Pre-fetch paginated dispatch history for every party. This is the
+    other heavy call (50 pages × 10k limit) that caused first-request
+    hangs.
+    """
+    global _DISP_WARM_LOCK
+    if _DISP_WARM_LOCK or not parties:
+        return
+    _DISP_WARM_LOCK = True
+    try:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from app.utils import disk_cache as _dc
+        from datetime import timedelta
+
+        cache = pdi_status.__dict__.get('_party_disp_cache')
+        if cache is None:
+            cache = _dc.load_party_dispatch_cache()
+            pdi_status.__dict__['_party_disp_cache'] = cache
+
+        now = time.time()
+        to_date = datetime.now().strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+
+        def warm_one(party):
+            party_id = party.get('id')
+            if not party_id:
+                return None
+            pd_key = f"{party_id}|{days}"
+            entry = cache.get(pd_key)
+            if entry and (now - entry.get('timestamp', 0)) < _DISP_WARM_TTL:
+                return None
+            try:
+                mrp_lookup = {}
+                page = 1
+                max_pages = 50
+                while page <= max_pages:
+                    resp = http_requests.post(
+                        'https://umanmrp.in/api/party-dispatch-history.php',
+                        json={
+                            'party_id': party_id,
+                            'from_date': from_date,
+                            'to_date': to_date,
+                            'page': page,
+                            'limit': 10000
+                        },
+                        timeout=60,
+                        headers={'Cache-Control': 'no-cache'}
+                    )
+                    if resp.status_code != 200:
+                        break
+                    data = resp.json()
+                    dispatch_summary = data.get('dispatch_summary', [])
+                    if not dispatch_summary:
+                        break
+                    for d in dispatch_summary:
+                        dispatch_date = d.get('dispatch_date') or d.get('date', '')
+                        vehicle_no = d.get('vehicle_no', '') or 'Unknown'
+                        invoice_no = d.get('invoice_no', '')
+                        factory_name = d.get('factory_name', '')
+                        dispatch_party = d.get('dispatch_party', '') or vehicle_no
+                        pallet_nos = d.get('pallet_nos', {})
+                        if isinstance(pallet_nos, dict):
+                            for pallet_no, barcodes_str in pallet_nos.items():
+                                if not isinstance(barcodes_str, str):
+                                    continue
+                                for serial in barcodes_str.strip().split():
+                                    s = serial.strip().upper()
+                                    if not s:
+                                        continue
+                                    mrp_lookup[s] = {
+                                        'pallet_no': pallet_no,
+                                        'dispatch_party': dispatch_party,
+                                        'vehicle_no': vehicle_no,
+                                        'dispatch_date': dispatch_date,
+                                        'invoice_no': invoice_no,
+                                        'factory_name': factory_name
+                                    }
+                    page += 1
+                cache[pd_key] = {'timestamp': time.time(), 'data': mrp_lookup}
+                return (party.get('companyName'), len(mrp_lookup))
+            except Exception as e:
+                print(f"[warm-disp] {party.get('companyName')}: {e}")
+                return None
+
+        warmed = 0
+        with ThreadPoolExecutor(max_workers=3) as ex:
+            futures = [ex.submit(warm_one, p) for p in parties]
+            for f in as_completed(futures):
+                r = f.result()
+                if r:
+                    warmed += 1
+                    print(f"[warm-disp] {r[0]}: {r[1]} dispatched serials")
+
+        try:
+            _dc.save_party_dispatch_cache(cache)
+        except Exception:
+            pass
+        if warmed:
+            print(f"[warm-disp] DONE: warmed {warmed}/{len(parties)} parties")
+    except Exception as e:
+        print(f"[warm-disp] failed: {e}")
+    finally:
+        _DISP_WARM_LOCK = False
+
 
 def _load_parties_pdi_disk_cache():
     try:
@@ -4226,6 +4416,24 @@ def _refresh_parties_with_pdis_bg():
         cache['timestamp'] = now
         _save_parties_pdi_disk_cache(results, now)
         print(f"[parties-with-pdis] refreshed: {len(results)} parties with PDIs")
+
+        # Kick off bulk packing + dispatch cache pre-warm in background.
+        # This eliminates cold-start hangs (the 28s first-call that caused
+        # nginx 502 cascades). Uses the FULL party list, not just those
+        # with PDIs, so any newly-added PDI is also warm.
+        try:
+            import threading as _th
+            warm_targets = all_parties or results
+            _th.Thread(
+                target=_warm_party_packing_caches_bg,
+                args=(warm_targets,), daemon=True
+            ).start()
+            _th.Thread(
+                target=_warm_party_dispatch_caches_bg,
+                args=(warm_targets,), daemon=True
+            ).start()
+        except Exception as e:
+            print(f"[parties-with-pdis] warm kick-off failed: {e}")
     except Exception as e:
         print(f"[parties-with-pdis] bg refresh failed: {e}")
     finally:
@@ -5404,4 +5612,24 @@ def get_party_workspace_summaries():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+# ------------------------------------------------------------
+# Startup pre-warm: kick off the cache warmer ~5 sec after import so
+# the server is fully up first. Eliminates cold-start 502 cascades.
+# ------------------------------------------------------------
+def _startup_warm_caches():
+    import threading as _th, time as _t
+    _t.sleep(5)
+    try:
+        _refresh_parties_with_pdis_bg()
+    except Exception as e:
+        print(f"[startup-warm] failed: {e}")
+
+
+try:
+    import threading as _th
+    _th.Thread(target=_startup_warm_caches, daemon=True).start()
+    print("[startup-warm] scheduled (T+5s)")
+except Exception as _e:
+    print(f"[startup-warm] could not schedule: {_e}")
 

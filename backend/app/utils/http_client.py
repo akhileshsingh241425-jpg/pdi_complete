@@ -38,7 +38,7 @@ def _build_session() -> requests.Session:
     retry = Retry(
         total=2,
         connect=2,
-        read=1,
+        read=0,                          # don't retry on read timeout — caller decides
         backoff_factor=0.3,
         status_forcelist=(502, 503, 504),
         allowed_methods=frozenset(['GET', 'POST']),

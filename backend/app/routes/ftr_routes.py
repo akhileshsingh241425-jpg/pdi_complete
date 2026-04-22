@@ -6,6 +6,7 @@ from flask import Blueprint, request, jsonify, send_file
 from app.services.ftr_pdf_generator import create_ftr_report
 from app.utils.db_pool import get_db_connection      # pooled MySQL
 from app.utils import http_client                    # shared keep-alive session
+from app.utils import disk_cache                     # JSON disk cache (survives pm2 restart)
 from config import Config
 import os
 import pymysql
@@ -2710,7 +2711,7 @@ def pdi_status(pdi_id):
         days = 730
     force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
 
-    cache = pdi_status.__dict__.setdefault('_cache', {})
+    cache = pdi_status.__dict__.setdefault('_cache', disk_cache.load_pdi_status_cache())
     cache_key = f"{pdi_id}|{party_id}|{days}"
     now = time.time()
     # 10 min response cache — short enough that fresh dispatches/packs show up
@@ -2744,60 +2745,75 @@ def pdi_status(pdi_id):
     total_pdi = len(pdi_barcode_set)
 
     # ===== 2. Fetch party dispatch history (bulk, paginated) =====
+    # Disk-cached for 30 min — this is the heaviest API (50 pages possible).
     from datetime import timedelta
-    to_date = datetime.now().strftime('%Y-%m-%d')
-    from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
-
-    mrp_lookup = {}
-    page = 1
-    max_pages = 50
-    while page <= max_pages:
-        try:
-            resp = http_requests.post(
-                'https://umanmrp.in/api/party-dispatch-history.php',
-                json={
-                    'party_id': party_id,
-                    'from_date': from_date,
-                    'to_date': to_date,
-                    'page': page,
-                    'limit': 10000
-                },
-                timeout=120,
-                headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
-            )
-            if resp.status_code != 200:
-                break
-            data = resp.json()
-            dispatch_summary = data.get('dispatch_summary', [])
-            if not dispatch_summary:
-                break
-            for d in dispatch_summary:
-                dispatch_date = d.get('dispatch_date') or d.get('date', '')
-                vehicle_no = d.get('vehicle_no', '') or 'Unknown'
-                invoice_no = d.get('invoice_no', '')
-                factory_name = d.get('factory_name', '')
-                dispatch_party = d.get('dispatch_party', '') or vehicle_no
-                pallet_nos = d.get('pallet_nos', {})
-                if isinstance(pallet_nos, dict):
-                    for pallet_no, barcodes_str in pallet_nos.items():
-                        if not isinstance(barcodes_str, str):
-                            continue
-                        for serial in barcodes_str.strip().split():
-                            s = serial.strip().upper()
-                            if not s:
+    party_disp_cache = pdi_status.__dict__.setdefault(
+        '_party_disp_cache', disk_cache.load_party_dispatch_cache()
+    )
+    PARTY_DISP_TTL = 1800  # 30 min
+    pd_key = f"{party_id}|{days}"
+    pd_entry = party_disp_cache.get(pd_key)
+    if not force and pd_entry and (now - pd_entry.get('timestamp', 0)) < PARTY_DISP_TTL:
+        mrp_lookup = pd_entry.get('data') or {}
+    else:
+        to_date = datetime.now().strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
+        mrp_lookup = {}
+        page = 1
+        max_pages = 50
+        while page <= max_pages:
+            try:
+                resp = http_requests.post(
+                    'https://umanmrp.in/api/party-dispatch-history.php',
+                    json={
+                        'party_id': party_id,
+                        'from_date': from_date,
+                        'to_date': to_date,
+                        'page': page,
+                        'limit': 10000
+                    },
+                    timeout=120,
+                    headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
+                )
+                if resp.status_code != 200:
+                    break
+                data = resp.json()
+                dispatch_summary = data.get('dispatch_summary', [])
+                if not dispatch_summary:
+                    break
+                for d in dispatch_summary:
+                    dispatch_date = d.get('dispatch_date') or d.get('date', '')
+                    vehicle_no = d.get('vehicle_no', '') or 'Unknown'
+                    invoice_no = d.get('invoice_no', '')
+                    factory_name = d.get('factory_name', '')
+                    dispatch_party = d.get('dispatch_party', '') or vehicle_no
+                    pallet_nos = d.get('pallet_nos', {})
+                    if isinstance(pallet_nos, dict):
+                        for pallet_no, barcodes_str in pallet_nos.items():
+                            if not isinstance(barcodes_str, str):
                                 continue
-                            mrp_lookup[s] = {
-                                'pallet_no': pallet_no,
-                                'dispatch_party': dispatch_party,
-                                'vehicle_no': vehicle_no,
-                                'dispatch_date': dispatch_date,
-                                'invoice_no': invoice_no,
-                                'factory_name': factory_name
-                            }
-            page += 1
-        except Exception as e:
-            print(f"[PDI Status] page {page} error: {e}")
-            break
+                            for serial in barcodes_str.strip().split():
+                                s = serial.strip().upper()
+                                if not s:
+                                    continue
+                                mrp_lookup[s] = {
+                                    'pallet_no': pallet_no,
+                                    'dispatch_party': dispatch_party,
+                                    'vehicle_no': vehicle_no,
+                                    'dispatch_date': dispatch_date,
+                                    'invoice_no': invoice_no,
+                                    'factory_name': factory_name
+                                }
+                page += 1
+            except Exception as e:
+                print(f"[PDI Status] page {page} error: {e}")
+                break
+        # Persist heavy dispatch lookup so pm2 restart doesn't lose it
+        party_disp_cache[pd_key] = {'timestamp': now, 'data': mrp_lookup}
+        try:
+            disk_cache.save_party_dispatch_cache(party_disp_cache)
+        except Exception:
+            pass
 
     # ===== 3. Intersect =====
     dispatched_set = pdi_barcode_set & set(mrp_lookup.keys())
@@ -2808,7 +2824,7 @@ def pdi_status(pdi_id):
     # NO CAP — every undispatched barcode is checked. Cache + 12 parallel
     # workers + keep-alive HTTP session keeps this fast on repeat calls.
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    pack_cache = pdi_status.__dict__.setdefault('_pack_cache', {})
+    pack_cache = pdi_status.__dict__.setdefault('_pack_cache', disk_cache.load_pack_cache())
     # Smart TTL by state:
     #   packed  — terminal (a packed barcode never goes back to pending) → 24h
     #   pending — may flip to packed any moment              → 15 min
@@ -2840,7 +2856,7 @@ def pdi_status(pdi_id):
         try:
             r = http_requests.post(
                 'https://umanmrp.in/api/get_barcode_tracking.php',
-                data={'barcode': serial}, timeout=8
+                data={'barcode': serial}, timeout=5  # fast fail; warmer will catch later
             )
             if r.status_code != 200:
                 return ('unknown', serial, None)
@@ -2859,8 +2875,6 @@ def pdi_status(pdi_id):
             return ('unknown', serial, None)
 
     if to_check:
-        # Bigger pool here is OK — these are short-lived I/O-bound calls
-        # and the request itself is what the user is waiting on.
         with ThreadPoolExecutor(max_workers=20) as ex:
             for f in as_completed([ex.submit(_check_pack, s) for s in to_check]):
                 status, serial, info = f.result()
@@ -2873,6 +2887,11 @@ def pdi_status(pdi_id):
                     pack_cache[serial] = {'t': now, 'status': 'pending'}
                 else:
                     pack_unknown += 1
+        # Persist pack_cache so pm2 restart doesn't lose this batch.
+        try:
+            disk_cache.save_pack_cache(pack_cache)
+        except Exception:
+            pass
 
     skipped_pack_check = 0  # no cap — kept for response shape compat
 
@@ -2979,6 +2998,10 @@ def pdi_status(pdi_id):
     }
 
     cache[cache_key] = {"timestamp": now, "data": payload}
+    try:
+        disk_cache.save_pdi_status_cache(cache)
+    except Exception:
+        pass
     return jsonify(payload)
 
 

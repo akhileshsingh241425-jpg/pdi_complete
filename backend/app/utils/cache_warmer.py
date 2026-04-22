@@ -48,7 +48,8 @@ def _warm_one_pdi(app, pdi_id: str, party_id: str) -> bool:
 def _run_warm_cycle(app):
     """One full warm pass — bounded to stop_hour."""
     from app.utils import http_client
-    from app.routes.ftr_routes import _load_parties_pdi_disk_cache
+    from app.utils import disk_cache
+    from app.routes.ftr_routes import _load_parties_pdi_disk_cache, pdi_status
 
     http = http_client.http
     stop_hour = int(os.environ.get('CACHE_WARMER_STOP_HOUR', '5'))
@@ -113,6 +114,14 @@ def _run_warm_cycle(app):
     mins = (time.time() - t0) / 60
     print(f"[CacheWarmer] === done: warmed={warmed}, failed={failed}, "
           f"elapsed={mins:.1f} min ===")
+    # Flush pack_cache to disk so the populated state survives any restart.
+    try:
+        pack_cache = getattr(pdi_status, '_pack_cache', None)
+        if pack_cache is not None:
+            disk_cache.save_pack_cache(pack_cache)
+            print(f"[CacheWarmer] persisted {len(pack_cache)} pack entries to disk")
+    except Exception as e:
+        print(f"[CacheWarmer] persist failed: {e}")
 
 
 def _warm_loop(app):
@@ -218,6 +227,12 @@ def _refresh_pending_loop(app):
                 print(f"[CacheWarmer] incremental: {flipped} pending->packed in {(time.time()-t0):.1f}s, response cache cleared")
             else:
                 print(f"[CacheWarmer] incremental: no changes ({(time.time()-t0):.1f}s)")
+            # Persist after every cycle
+            try:
+                from app.utils import disk_cache
+                disk_cache.save_pack_cache(pack_cache)
+            except Exception:
+                pass
         except Exception as e:
             print(f"[CacheWarmer] incremental loop error: {e}")
         time.sleep(interval)

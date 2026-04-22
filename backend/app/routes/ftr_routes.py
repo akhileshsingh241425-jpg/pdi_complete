@@ -4419,11 +4419,11 @@ def _refresh_parties_with_pdis_bg():
 
         # Kick off bulk packing + dispatch cache pre-warm in background.
         # This eliminates cold-start hangs (the 28s first-call that caused
-        # nginx 502 cascades). Uses the FULL party list, not just those
-        # with PDIs, so any newly-added PDI is also warm.
+        # nginx 502 cascades). Only warm parties that actually have PDIs
+        # (~33 parties) — NOT the full 600+ sales-party list.
         try:
             import threading as _th
-            warm_targets = all_parties or results
+            warm_targets = results  # only PDI-having parties
             _th.Thread(
                 target=_warm_party_packing_caches_bg,
                 args=(warm_targets,), daemon=True

@@ -2743,6 +2743,17 @@ def pdi_status(pdi_id):
             return jsonify({**entry['data'], "cached": True})
 
     # ===== 1. Get PDI barcodes =====
+    # On upstream failure, serve any stale cached response we have rather than 502.
+    def _serve_stale_or_error(err_msg, status_code=502):
+        if cache_key in cache:
+            return jsonify({
+                **cache[cache_key]['data'],
+                "cached": True,
+                "stale": True,
+                "warning": err_msg
+            })
+        return jsonify({"success": False, "error": err_msg}), status_code
+
     try:
         barc_resp = http_requests.post(
             'https://mrp.umanerp.com/get/get_pdi_barcodes.php',
@@ -2751,13 +2762,12 @@ def pdi_status(pdi_id):
         )
         barc_data = barc_resp.json() if barc_resp.status_code == 200 else {}
     except Exception as e:
-        return jsonify({"success": False, "error": f"Failed to fetch PDI barcodes: {e}"}), 502
+        return _serve_stale_or_error(f"Failed to fetch PDI barcodes: {e}")
 
     if barc_data.get('status') != 'success':
-        return jsonify({
-            "success": False,
-            "error": barc_data.get('message', 'Upstream PDI barcode fetch failed')
-        }), 502
+        return _serve_stale_or_error(
+            barc_data.get('message', 'Upstream PDI barcode fetch failed')
+        )
 
     pdi_details = barc_data.get('pdi_details') or {}
     raw_barcodes = barc_data.get('barcodes') or []
@@ -2782,6 +2792,7 @@ def pdi_status(pdi_id):
         mrp_lookup = {}
         page = 1
         max_pages = 50
+        fetch_failed = False
         while page <= max_pages:
             try:
                 resp = http_requests.post(
@@ -2797,6 +2808,8 @@ def pdi_status(pdi_id):
                     headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'}
                 )
                 if resp.status_code != 200:
+                    print(f"[PDI Status] dispatch page {page}: HTTP {resp.status_code}")
+                    fetch_failed = True
                     break
                 data = resp.json()
                 dispatch_summary = data.get('dispatch_summary', [])
@@ -2827,14 +2840,21 @@ def pdi_status(pdi_id):
                                 }
                 page += 1
             except Exception as e:
-                print(f"[PDI Status] page {page} error: {e}")
+                print(f"[PDI Status] dispatch page {page} error: {e}")
+                fetch_failed = True
                 break
-        # Persist heavy dispatch lookup so pm2 restart doesn't lose it
-        party_disp_cache[pd_key] = {'timestamp': now, 'data': mrp_lookup}
-        try:
-            disk_cache.save_party_dispatch_cache(party_disp_cache)
-        except Exception:
-            pass
+
+        # If fetch failed mid-way and we have stale cache, prefer stale (data
+        # consistency > freshness). Otherwise persist whatever we got.
+        if fetch_failed and pd_entry and pd_entry.get('data'):
+            print(f"[PDI Status] dispatch fetch failed — using stale cache for {pd_key}")
+            mrp_lookup = pd_entry.get('data') or {}
+        else:
+            party_disp_cache[pd_key] = {'timestamp': now, 'data': mrp_lookup}
+            try:
+                disk_cache.save_party_dispatch_cache(party_disp_cache)
+            except Exception:
+                pass
 
     # ===== 3. Intersect =====
     dispatched_set = pdi_barcode_set & set(mrp_lookup.keys())
@@ -2842,17 +2862,16 @@ def pdi_status(pdi_id):
 
     # ===== 3b. Detect packed (not dispatched) via BULK packing API =====
     # ONE call to get_barcode_tracking.php with {"party_name": "..."} returns
-    # ALL packed barcodes for that party (200k+ rows in ~4 sec).
-    # Cached on disk per party_name for 30 min — repeat PDIs of same party
-    # are then near-instant (just a set intersection).
-    pack_cache = pdi_status.__dict__.get('_pack_cache')
-    if pack_cache is None:
-        pack_cache = disk_cache.load_pack_cache()
-        pdi_status.__dict__['_pack_cache'] = pack_cache
+    # ALL packed/dispatched barcodes for that party (200k+ rows in ~4 sec).
+    # We keep only status='packed' rows. Cached on disk per party_name for
+    # 30 min — repeat PDIs of same party are then near-instant.
     party_pack_cache = pdi_status.__dict__.get('_party_pack_cache')
     if party_pack_cache is None:
         party_pack_cache = disk_cache.load_party_packing_cache()
         pdi_status.__dict__['_party_pack_cache'] = party_pack_cache
+
+    # Per-barcode pack_cache only used by FALLBACK path. Lazy-load on demand.
+    pack_cache = None  # loaded only if fallback path runs
 
     PARTY_PACKING_TTL = 1800  # 30 min — bulk packing data per party
 
@@ -2865,13 +2884,15 @@ def pdi_status(pdi_id):
 
     if party_packing_names:
         # FAST PATH: bulk fetch (one HTTP call per party_name variant)
-        all_packed = {}  # serial -> {pallet_no, packing_date, box_no}
+        all_packed = {}      # serial -> {pallet_no, packing_date, box_no}
         any_fetched = False
+        all_failed = True    # turns False if at least one variant succeeded (cache or fresh)
         for pname in party_packing_names:
             pentry = party_pack_cache.get(pname)
             if (not force) and pentry and (now - pentry.get('timestamp', 0)) < PARTY_PACKING_TTL:
                 for b, info in (pentry.get('data') or {}).items():
                     all_packed[b] = info
+                all_failed = False
                 continue
             try:
                 r = http_requests.post(
@@ -2881,10 +2902,10 @@ def pdi_status(pdi_id):
                 )
                 if r.status_code != 200:
                     print(f"[PDI Status] bulk packing {pname}: HTTP {r.status_code}")
-                    # use whatever stale entry we have
                     if pentry:
                         for b, info in (pentry.get('data') or {}).items():
                             all_packed[b] = info
+                        all_failed = False
                     continue
                 d = r.json()
                 if d.get('status') != 'success':
@@ -2892,13 +2913,16 @@ def pdi_status(pdi_id):
                     if pentry:
                         for b, info in (pentry.get('data') or {}).items():
                             all_packed[b] = info
+                        all_failed = False
                     continue
                 party_data = {}
                 for item in (d.get('data') or []):
                     b = (item.get('barcode') or '').strip().upper()
                     if not b:
                         continue
-                    # Only count rows that are still PACKED (not yet dispatched).
+                    # PHP returns BOTH 'packed' and 'dispatched' rows (where this
+                    # party packed it OR this party dispatched it). We only want
+                    # currently packed (not yet dispatched).
                     if (item.get('status') or '').lower() != 'packed':
                         continue
                     party_data[b] = {
@@ -2909,33 +2933,34 @@ def pdi_status(pdi_id):
                 party_pack_cache[pname] = {'timestamp': now, 'data': party_data}
                 all_packed.update(party_data)
                 any_fetched = True
+                all_failed = False
                 print(f"[PDI Status] bulk packing {pname}: {len(party_data)} packed barcodes")
             except Exception as e:
                 print(f"[PDI Status] bulk packing {pname} error: {e}")
                 if pentry:
                     for b, info in (pentry.get('data') or {}).items():
                         all_packed[b] = info
+                    all_failed = False
 
-        # Persist updated bulk cache
+        # Persist updated bulk cache (only if we actually fetched fresh data)
         if any_fetched:
             try:
                 disk_cache.save_party_packing_cache(party_pack_cache)
             except Exception:
                 pass
 
+        # If every variant failed AND we have a stale full response → return it
+        # rather than reporting wrong "all pending" numbers.
+        if all_failed:
+            return _serve_stale_or_error(
+                "Packing API unavailable; no cached data to fall back on"
+            )
+
         # Intersect with PDI's undispatched barcodes — instant, in-memory
         packed_set = not_dispatched_set & set(all_packed.keys())
         pending_set = not_dispatched_set - packed_set
         for s in packed_set:
             packed_info[s] = all_packed[s]
-            # also seed per-barcode pack_cache so warmer / fallback are consistent
-            pack_cache[s] = {'t': now, 'status': 'packed', 'info': all_packed[s]}
-        for s in pending_set:
-            pack_cache[s] = {'t': now, 'status': 'pending'}
-        try:
-            disk_cache.save_pack_cache(pack_cache)
-        except Exception:
-            pass
 
     else:
         # FALLBACK PATH (party_id not in PARTY_PACKING_NAMES): per-barcode loop.
@@ -2943,6 +2968,11 @@ def pdi_status(pdi_id):
         #   packed  — terminal (a packed barcode never goes back to pending) → 24h
         #   pending — may flip to packed any moment              → 15 min
         from concurrent.futures import ThreadPoolExecutor, as_completed
+        pack_cache = pdi_status.__dict__.get('_pack_cache')
+        if pack_cache is None:
+            pack_cache = disk_cache.load_pack_cache()
+            pdi_status.__dict__['_pack_cache'] = pack_cache
+
         PACK_TTL_PACKED = 24 * 3600
         PACK_TTL_PENDING = 15 * 60
 

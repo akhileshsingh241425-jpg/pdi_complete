@@ -229,12 +229,8 @@ def create_app():
     except Exception as e:
         print(f"[startup] db_pool warm skipped: {e}")
 
-    # Nightly PDI cache warmer (02:00 → 05:00). Pre-loads pack-status for
-    # every PDI of every party so next-day requests are instant.
-    try:
-        from app.utils.cache_warmer import start_warmer
-        start_warmer(app)
-    except Exception as e:
-        print(f"[startup] cache warmer skipped: {e}")
+    # NOTE: Cache warmer removed — bulk packing API (get_barcode_tracking.php
+    # with party_name) is fast enough on demand (~4 sec per party, then 30-min
+    # cached). No nightly pre-warm needed.
 
     return app

@@ -2539,6 +2539,46 @@ SALES_PARTY_CACHE = {'data': None, 'timestamp': 0}
 SALES_PARTY_CACHE_TTL = 600  # 10 minutes
 
 
+def _get_party_name_for_id(party_id):
+    """Look up the canonical party_name (companyName) for a party_id from the
+    sales-parties cache. If cache is cold, fetch it once.
+    Returns the company name string or None.
+    """
+    if not party_id:
+        return None
+    try:
+        # Hot cache hit
+        data = (SALES_PARTY_CACHE or {}).get('data')
+        if data:
+            for p in data:
+                if p.get('id') == party_id:
+                    return (p.get('companyName') or '').strip() or None
+        # Cold: fetch sales parties once
+        resp = http_requests.post(
+            SALES_PARTY_API,
+            json={"personId": SALES_PERSON_ID},
+            timeout=15
+        )
+        if resp.status_code != 200:
+            return None
+        payload = resp.json() or {}
+        raw = payload.get('data') or []
+        parties = []
+        for p in raw:
+            pid = p.get('PartyNameId')
+            name = (p.get('PartyName') or '').strip()
+            if pid and name:
+                parties.append({"id": pid, "companyName": name})
+        SALES_PARTY_CACHE['data'] = parties
+        SALES_PARTY_CACHE['timestamp'] = time.time()
+        for p in parties:
+            if p['id'] == party_id:
+                return p['companyName']
+    except Exception as e:
+        print(f"[party-name lookup] failed for {party_id}: {e}")
+    return None
+
+
 @ftr_bp.route('/sales-parties', methods=['GET'])
 def get_sales_parties():
     """
@@ -2760,14 +2800,48 @@ def pdi_status(pdi_id):
             json={"pdi_id": pdi_id},
             timeout=120
         )
-        barc_data = barc_resp.json() if barc_resp.status_code == 200 else {}
+        # HTTP-level failure -> upstream is sick. Serve stale or 502.
+        if barc_resp.status_code != 200:
+            return _serve_stale_or_error(
+                f"Upstream PDI barcode API HTTP {barc_resp.status_code}"
+            )
+        try:
+            barc_data = barc_resp.json()
+        except Exception:
+            return _serve_stale_or_error("Upstream PDI barcode API returned non-JSON")
     except Exception as e:
         return _serve_stale_or_error(f"Failed to fetch PDI barcodes: {e}")
 
+    # If upstream returned a clean error (e.g. PDI not found), surface that
+    # as a real 404 / 200-with-empty-data — NOT 502 (502 = our infra broken).
     if barc_data.get('status') != 'success':
-        return _serve_stale_or_error(
-            barc_data.get('message', 'Upstream PDI barcode fetch failed')
-        )
+        msg = (barc_data.get('message') or '').strip()
+        is_not_found = 'not found' in msg.lower() or 'no barcode' in msg.lower()
+        if is_not_found:
+            # Treat as a valid empty response so the UI shows a clean
+            # "no barcodes" state instead of a generic 502.
+            return jsonify({
+                "success": True,
+                "cached": False,
+                "pdi": {"id": pdi_id, "name": "", "wattage": "", "quantity": 0, "total_kw": 0},
+                "party_id": party_id,
+                "summary": {
+                    "total_barcodes": 0, "dispatched": 0, "packed": 0, "pending": 0,
+                    "dispatched_percent": 0, "packed_percent": 0, "pending_percent": 0,
+                    "party_dispatch_universe": 0,
+                    "pack_check_capped_at": 0, "pack_skipped_due_to_cap": 0, "pack_unknown": 0,
+                    "warning": msg or "PDI not found"
+                },
+                "dispatch_groups": [],
+                "pallet_groups": [],
+                "packed_sample": [],
+                "pending_sample": [],
+                "all_dispatched": [],
+                "all_packed": [],
+                "all_pending": []
+            })
+        # Real upstream error — try stale cache first.
+        return _serve_stale_or_error(msg or 'Upstream PDI barcode fetch failed')
 
     pdi_details = barc_data.get('pdi_details') or {}
     raw_barcodes = barc_data.get('barcodes') or []
@@ -2880,7 +2954,15 @@ def pdi_status(pdi_id):
     packed_info = {}
     pack_unknown = 0
 
-    party_packing_names = PARTY_PACKING_NAMES.get(party_id, [])
+    party_packing_names = list(PARTY_PACKING_NAMES.get(party_id, []))
+
+    # AUTO-DISCOVERY: if party_id is not in the hardcoded dict (or even if it
+    # is — for safety), also include the canonical companyName from the
+    # sales-parties cache. This makes the FAST bulk path work for ALL
+    # parties, not just RAYS / L&T / S&W.
+    auto_name = _get_party_name_for_id(party_id)
+    if auto_name and auto_name not in party_packing_names:
+        party_packing_names.append(auto_name)
 
     if party_packing_names:
         # FAST PATH: bulk fetch (one HTTP call per party_name variant)

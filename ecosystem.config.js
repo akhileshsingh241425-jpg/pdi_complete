@@ -2,10 +2,9 @@ module.exports = {
   apps: [
     {
       name: 'pdi-backend',
-      script: 'python',
-      args: 'backend/production_server.py',
+      script: 'backend/production_server.py',
       cwd: './',
-      interpreter: 'none',
+      interpreter: '/root/pdi_complete/backend/venv/bin/python',
       instances: 1,
       autorestart: true,
       watch: false,

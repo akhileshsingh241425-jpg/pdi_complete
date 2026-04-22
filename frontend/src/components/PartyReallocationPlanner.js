@@ -593,15 +593,31 @@ const PartyReallocationPlanner = () => {
     try {
       const forceParam = opts.force ? '&force=1' : '';
       const resp = await fetch(`${API_BASE_URL}/ftr/pdi-status/${encodeURIComponent(pid)}?party_id=${encodeURIComponent(partyId)}${forceParam}`);
-      const data = await resp.json();
+      const raw = await resp.text();
+      let data = null;
+      try {
+        data = raw ? JSON.parse(raw) : null;
+      } catch (e) {
+        data = null;
+      }
       if (!resp.ok || !data?.success) {
+        // Nginx/Passenger 502 pages are HTML, not JSON.
+        if (!data) {
+          throw new Error(`PDI status API failed (${resp.status}). Server returned non-JSON response.`);
+        }
         throw new Error(data?.error || 'Failed to fetch PDI status');
       }
       setPdiStatusData(data);
       // Auto-load previously saved actual barcodes for this PDI (independent of card)
       try {
         const sr = await fetch(`${API_BASE_URL}/ftr/actual-pdi-barcodes/${encodeURIComponent(pid)}`);
-        const sj = await sr.json();
+        const savedRaw = await sr.text();
+        let sj = null;
+        try {
+          sj = savedRaw ? JSON.parse(savedRaw) : null;
+        } catch (e) {
+          sj = null;
+        }
         if (sr.ok && sj?.success && sj.exists) {
           const bcs = sj.barcodes || [];
           setActualBarcodes(bcs);

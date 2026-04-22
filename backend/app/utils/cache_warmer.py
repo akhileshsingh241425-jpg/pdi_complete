@@ -45,7 +45,7 @@ def _warm_one_pdi(app, pdi_id: str, party_id: str) -> bool:
         return False
 
 
-def _run_warm_cycle(app):
+def _run_warm_cycle(app, is_boot_run: bool = False):
     """One full warm pass — bounded to stop_hour."""
     from app.utils import http_client
     from app.utils import disk_cache
@@ -60,9 +60,14 @@ def _run_warm_cycle(app):
     if cutoff_dt <= now_dt:
         cutoff_dt = cutoff_dt + timedelta(days=1)
     stop_at = cutoff_dt.timestamp()
+    if is_boot_run:
+        # Manual/boot-triggered warmup should not run for nearly 24h when
+        # started after the nightly cutoff window.
+        boot_max_seconds = int(os.environ.get('CACHE_WARMER_BOOT_MAX_SECONDS', '10800'))
+        stop_at = min(stop_at, time.time() + boot_max_seconds)
 
-    print(f"[CacheWarmer] === starting nightly warm-up at {now_dt.strftime('%H:%M:%S')} "
-          f"(cutoff {cutoff_dt.strftime('%H:%M')}) ===")
+        print(f"[CacheWarmer] === starting nightly warm-up at {now_dt.strftime('%H:%M:%S')} "
+            f"(cutoff {datetime.fromtimestamp(stop_at).strftime('%H:%M')}) ===")
     t0 = time.time()
 
     parties_data = _load_parties_pdi_disk_cache()
@@ -75,6 +80,7 @@ def _run_warm_cycle(app):
 
     warmed = 0
     failed = 0
+    checkpoints = 0
     for party in parties:
         if time.time() > stop_at:
             print(f"[CacheWarmer] hit {stop_hour}:00 cutoff, stopping early")
@@ -105,6 +111,22 @@ def _run_warm_cycle(app):
                     warmed += 1
                 else:
                     failed += 1
+                total_done = warmed + failed
+                if total_done % 10 == 0:
+                    # Persist checkpoints so file size grows during run and
+                    # progress survives crashes/restarts.
+                    try:
+                        pack_cache = getattr(pdi_status, '_pack_cache', None)
+                        if pack_cache is not None:
+                            disk_cache.save_pack_cache(pack_cache)
+                            checkpoints += 1
+                            print(
+                                f"[CacheWarmer] progress: done={total_done} "
+                                f"(ok={warmed}, fail={failed}), "
+                                f"pack_cache={len(pack_cache)} entries"
+                            )
+                    except Exception as e:
+                        print(f"[CacheWarmer] checkpoint persist failed: {e}")
                 # Tiny breather so we don't pin the upstream MRP API.
                 time.sleep(0.3)
         except Exception as e:
@@ -113,7 +135,7 @@ def _run_warm_cycle(app):
 
     mins = (time.time() - t0) / 60
     print(f"[CacheWarmer] === done: warmed={warmed}, failed={failed}, "
-          f"elapsed={mins:.1f} min ===")
+          f"elapsed={mins:.1f} min, checkpoints={checkpoints} ===")
     # Flush pack_cache to disk so the populated state survives any restart.
     try:
         pack_cache = getattr(pdi_status, '_pack_cache', None)
@@ -132,7 +154,7 @@ def _warm_loop(app):
     if run_on_boot:
         time.sleep(60)
         try:
-            _run_warm_cycle(app)
+            _run_warm_cycle(app, is_boot_run=True)
         except Exception as e:
             print(f"[CacheWarmer] boot run failed: {e}")
 

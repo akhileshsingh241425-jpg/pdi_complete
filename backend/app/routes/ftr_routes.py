@@ -2711,7 +2711,10 @@ def pdi_status(pdi_id):
         days = 730
     force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
 
-    cache = pdi_status.__dict__.setdefault('_cache', disk_cache.load_pdi_status_cache())
+    cache = pdi_status.__dict__.get('_cache')
+    if cache is None:
+        cache = disk_cache.load_pdi_status_cache()
+        pdi_status.__dict__['_cache'] = cache
     cache_key = f"{pdi_id}|{party_id}|{days}"
     now = time.time()
     # 10 min response cache — short enough that fresh dispatches/packs show up
@@ -2747,9 +2750,10 @@ def pdi_status(pdi_id):
     # ===== 2. Fetch party dispatch history (bulk, paginated) =====
     # Disk-cached for 30 min — this is the heaviest API (50 pages possible).
     from datetime import timedelta
-    party_disp_cache = pdi_status.__dict__.setdefault(
-        '_party_disp_cache', disk_cache.load_party_dispatch_cache()
-    )
+    party_disp_cache = pdi_status.__dict__.get('_party_disp_cache')
+    if party_disp_cache is None:
+        party_disp_cache = disk_cache.load_party_dispatch_cache()
+        pdi_status.__dict__['_party_disp_cache'] = party_disp_cache
     PARTY_DISP_TTL = 1800  # 30 min
     pd_key = f"{party_id}|{days}"
     pd_entry = party_disp_cache.get(pd_key)
@@ -2824,7 +2828,10 @@ def pdi_status(pdi_id):
     # NO CAP — every undispatched barcode is checked. Cache + 12 parallel
     # workers + keep-alive HTTP session keeps this fast on repeat calls.
     from concurrent.futures import ThreadPoolExecutor, as_completed
-    pack_cache = pdi_status.__dict__.setdefault('_pack_cache', disk_cache.load_pack_cache())
+    pack_cache = pdi_status.__dict__.get('_pack_cache')
+    if pack_cache is None:
+        pack_cache = disk_cache.load_pack_cache()
+        pdi_status.__dict__['_pack_cache'] = pack_cache
     # Smart TTL by state:
     #   packed  — terminal (a packed barcode never goes back to pending) → 24h
     #   pending — may flip to packed any moment              → 15 min

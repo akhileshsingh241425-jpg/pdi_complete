@@ -30,57 +30,64 @@ class FTRPDFGenerator:
         c.setFont("Helvetica", 11)
         c.setFillColorRGB(0, 0, 0)  # Black color
         
-        # Helper function to place text (coordinates from bottom-left)
-        def place_text(x, y, text):
-            c.drawString(x, height - y, str(text))
+        # Conversion factor: 1 mm = 2.83465 points
+        MM_TO_POINT = 2.83465
         
-        # Module identification (adjust Y coordinates from top)
-        place_text(135, 175, data.get('producer', ''))
-        place_text(135, 199, data.get('moduleType', ''))
-        place_text(135, 223, data.get('serialNumber', ''))
+        def mm_to_point(mm_val):
+            return mm_val * MM_TO_POINT
+            
+        def place_text(x_mm, y_mm, text):
+            """Convert CSS-style mm positioning to ReportLab coordinates"""
+            x_pt = mm_to_point(x_mm)
+            y_pt = mm_to_point(y_mm)
+            # Flip y-axis origin (CSS top-left to ReportLab bottom-left)
+            c.drawString(x_pt, height - y_pt, str(text))
+
+        # Header - positions now in mm to match CSS
+        place_text(15, 45, data.get('producer', ''))   # Matches .ftr-left-column top
+        place_text(15, 50, data.get('moduleType', ''))
+        place_text(15, 55, data.get('serialNumber', ''))
         
         # Test conditions
-        place_text(135, 313, data.get('testDate', ''))
-        place_text(135, 337, data.get('testTime', ''))
-        place_text(135, 361, f"{data.get('irradiance', 0):.2f} W/m²")
-        place_text(135, 385, f"{data.get('moduleTemp', 0):.2f} °C")
-        place_text(135, 409, f"{data.get('ambientTemp', 0):.2f} °C")
+        place_text(15, 80, data.get('testDate', ''))
+        place_text(15, 85, data.get('testTime', ''))
+        place_text(15, 90, f"{data.get('irradiance', 0):.2f} W/m²")
+        place_text(15, 95, f"{data.get('moduleTemp', 0):.2f} °C")
+        place_text(15, 100, f"{data.get('ambientTemp', 0):.2f} °C")
         
         # Test results
         results = data.get('results', {})
-        place_text(135, 512, f"{results.get('pmax', 0):.2f} W")
-        place_text(135, 536, f"{results.get('vpm', 0):.2f} V")
-        place_text(135, 560, f"{results.get('ipm', 0):.2f} A")
-        place_text(135, 584, f"{results.get('voc', 0):.2f} V")
-        place_text(135, 608, f"{results.get('isc', 0):.2f} A")
-        place_text(135, 632, f"{results.get('fillFactor', 0):.2f} %")
-        place_text(135, 656, f"{results.get('rs', 0):.2f} Ω")
-        place_text(135, 680, f"{results.get('rsh', 0):.2f} Ω")
-        place_text(135, 704, f"{results.get('efficiency', 0):.2f} %")
+        place_text(15, 125, f"{results.get('pmax', 0):.2f} W")
+        place_text(15, 130, f"{results.get('vpm', 0):.2f} V")
+        place_text(15, 135, f"{results.get('ipm', 0):.2f} A")
+        place_text(15, 140, f"{results.get('voc', 0):.2f} V")
+        place_text(15, 145, f"{results.get('isc', 0):.2f} A")
+        place_text(15, 150, f"{results.get('fillFactor', 0):.2f} %")
+        place_text(15, 155, f"{results.get('rs', 0):.2f} Ω")
+        place_text(15, 160, f"{results.get('rsh', 0):.2f} Ω")
+        place_text(15, 165, f"{results.get('efficiency', 0):.2f} %")
         
         # Reference conditions
-        place_text(585, 475, "1000.00 W/m²")
-        place_text(585, 498, "25.00 °C")
+        place_text(115, 80, "1000.00 W/m²")
+        place_text(115, 85, "25.00 °C")
         
         # Module Area
-        place_text(630, 682, f"{data.get('moduleArea', 0)} m²")
+        place_text(115, 165, f"{data.get('moduleArea', 0)} m²")
         
         # Add graph image if provided
         graph_image_path = data.get('graphImagePath')
         if graph_image_path and os.path.exists(graph_image_path):
-            # Position: left 400px, top 130px, size 460x310px
-            # Convert to reportlab coordinates (from bottom-left)
-            img_x = 400
-            img_y = height - 130 - 310  # top - height
-            img_width = 460
-            img_height = 310
+            # Position matches .ftr-graph-container with production adjustments
+            img_x_mm = 115 - 7.24  # Adjust for X_diff
+            img_y_mm = 45 - 10.16  # Adjust for Y_diff
             
-            try:
-                c.drawImage(graph_image_path, img_x, img_y, 
-                          width=img_width, height=img_height, 
-                          preserveAspectRatio=True, mask='auto')
-            except Exception as e:
-                print(f"Error adding graph image: {e}")
+            c.drawImage(
+                graph_image_path,
+                mm_to_point(img_x_mm),
+                height - mm_to_point(img_y_mm) - mm_to_point(50),  # Adjust for image height
+                width=mm_to_point(80),
+                height=mm_to_point(50)
+            )
         
         c.save()
         packet.seek(0)

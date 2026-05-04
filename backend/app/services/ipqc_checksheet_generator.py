@@ -150,8 +150,8 @@ def generate_ipqc_checksheet(
     logo_path = os.path.join(os.path.dirname(__file__), 'ipqc_logo.png')
     if os.path.exists(logo_path):
         logo_img = XlImage(logo_path)
-        logo_img.width = 280
-        logo_img.height = 60
+        logo_img.width = 180
+        logo_img.height = 38
         ws.add_image(logo_img, 'A1')
 
     # D1:K2 — Title
@@ -347,8 +347,8 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 12, 4, 'once', B, alignment=AC)
     _cell(ws, 12, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F12:G12')
-    _cell(ws, 12, 6, 'As per Specification', B, alignment=AVNW)
-    el = _rr(2378, 0.8); ew = _rr(1125, 0.8); et = _rr(0.70, 0.03)
+    _cell(ws, 12, 6, '0.695–0.701mm', B, alignment=AVNW)
+    el = _rr(2378, 0.8); ew = _rr(1125, 0.8); et = round(random.uniform(0.695, 0.701), 3)
     ws.merge_cells('H12:N12')
     _cell(ws, 12, 8, f'{el}mm x {ew}mm x {et}mm', N, alignment=AM)
     _cell(ws, 12, 15, 'OK', N, alignment=AC)
@@ -440,11 +440,11 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('E22:E23'); _cell(ws, 22, 5, '1 String/TS shift', B, alignment=AC)
     ws.merge_cells('F22:G23'); _cell(ws, 22, 6, 'TS Visual Criteria', F14, alignment=AV)
     _cell(ws, 22, 15, 'OK', N, alignment=AC)
-    # TS columns: H=TS01A, I=TS01B, J=TS02A, K=TS02B, L=TS03A, M=TS03B, N=TS04A, O=TS04B
-    ts_headers_22 = ['TS01A', 'TS01B', 'TS02A', 'TS02B', 'TS03A', 'TS03B', 'TS04A', 'TS04B']
+    # TS columns: H=TS01A, I=TS01B, J=TS02A, K=TS02B, L=TS03A, M=TS03B, N=TS04A
+    ts_headers_22 = ['TS01A', 'TS01B', 'TS02A', 'TS02B', 'TS03A', 'TS03B', 'TS04A']
     for i, h in enumerate(ts_headers_22):
         _cell(ws, 22, 8+i, h, B, alignment=AC)
-    for i in range(8):
+    for i in range(7):
         _cell(ws, 23, 8+i, 'OK', N, alignment=AC)
 
     # 24-25 — EL Image of Strings
@@ -456,7 +456,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 24, 15, 'OK', N, alignment=AC)
     for i, h in enumerate(ts_headers_22):
         _cell(ws, 24, 8+i, h, B, alignment=AC)
-    for i in range(8):
+    for i in range(7):
         _cell(ws, 25, 8+i, 'OK', N, alignment=AC)
 
     # 26-27 — String length
@@ -467,7 +467,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('F26:G29'); _cell(ws, 26, 6, 'Refer Process Card ', B, alignment=AV)
     for i, h in enumerate(ts_headers_22):
         _cell(ws, 26, 8+i, h, B, alignment=AC)
-    for i in range(8):
+    for i in range(7):
         sl = _rr(1163, 0.8)
         _cell(ws, 27, 8+i, f'{sl:.1f}', N, alignment=AC)
 
@@ -476,7 +476,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 28, 3, ' Cell to Cell Gap', B, alignment=AV)
     for i, h in enumerate(ts_headers_22):
         _cell(ws, 28, 8+i, h, B, alignment=AC)
-    for i in range(8):
+    for i in range(7):
         gap = _rr(0.77, 0.05)
         _cell(ws, 29, 8+i, f'{gap:.2f}', N, alignment=AC)
 
@@ -508,7 +508,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('F32:G35')  # Reference merges F32:G35
     _cell(ws, 32, 6, 'Refer Process Card & Module Drawing', B, alignment=AV)
     ws.merge_cells('H32:N32')
-    ss_gap = _rr(2.5, 0.5)
+    ss_gap = round(random.uniform(1.3, 1.6), 2)
     _cell(ws, 32, 8, f'{ss_gap:.2f}mm', N, alignment=AM)
     _cell(ws, 32, 15, 'OK', N, alignment=AC)
 
@@ -546,7 +546,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('F37:G37'); _cell(ws, 37, 6, '132 Cell module drawing', F14, alignment=AV)
     ws.merge_cells('F38:G38'); _cell(ws, 38, 6, 'Refer Module Drawing: GSPL/N144/G/001', F14, alignment=AV)
     ws.merge_cells('H37:N37')
-    tb_edge = _rr(6.0, 0.8)
+    tb_edge = round(random.uniform(3.15, 3.22), 2)
     _cell(ws, 37, 8, f'{tb_edge:.2f}mm', N, alignment=AM)
     ws.merge_cells('H38:N38')
     _cell(ws, 38, 8, 'As per Drawing', N, alignment=AM)
@@ -566,10 +566,10 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 40, 4, 'Every 4h', B, alignment=AC); _cell(ws, 40, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F40:G40'); _cell(ws, 40, 6, 'Creepage distance should be as per process card/Drawing', B, alignment=AV)
     ws.merge_cells('H40:I40')
-    cr_top = _rr(11.7, 0.2)
+    cr_top = round(random.uniform(11.85, 12.15), 2)
     _cell(ws, 40, 8, f'Top: {cr_top}mm', N, alignment=AM)
     ws.merge_cells('J40:L40')
-    cr_bot = _rr(11.6, 0.2)
+    cr_bot = round(random.uniform(11.85, 12.15), 2)
     _cell(ws, 40, 10, f'Bottom: {cr_bot}mm', N, alignment=AM)
     ws.merge_cells('M40:N40'); _cell(ws, 40, 13, 'OK', N, alignment=AC)
     _cell(ws, 40, 15, 'OK', N, alignment=AC)
@@ -615,10 +615,10 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
 
     _cell(ws, 45, 3, 'EVA/EPE dimension(L*W*T)', B, alignment=AV)
     _cell(ws, 45, 4, 'once', B, alignment=AC); _cell(ws, 45, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F45:G45'); _cell(ws, 45, 6, 'As per Specification', B, alignment=AVNW)
+    ws.merge_cells('F45:G45'); _cell(ws, 45, 6, '0.695–0.702mm', B, alignment=AVNW)
     ws.merge_cells('H45:N45')
-    eva2l = _rr(2378, 0.8); eva2w = _rr(1125, 0.8)
-    _cell(ws, 45, 8, f'{eva2l}mm x {eva2w}mm', N, alignment=AM)
+    eva2l = _rr(2378, 0.8); eva2w = _rr(1125, 0.8); eva2t = round(random.uniform(0.695, 0.702), 3)
+    _cell(ws, 45, 8, f'{eva2l}mm x {eva2w}mm x {eva2t}mm', N, alignment=AM)
     _cell(ws, 45, 15, 'OK', N, alignment=AC)
 
     _cell(ws, 46, 3, 'EVA/EPE Status', B, alignment=AV)
@@ -818,9 +818,9 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 68, 15, 'OK', N, alignment=AC)
 
     _cell(ws, 73, 3, 'Trimming Blade life cycle', B, alignment=AV)
-    _cell(ws, 73, 4, 'once', B, alignment=AC); _cell(ws, 73, 5, 'per month', B, alignment=AC)
-    ws.merge_cells('F73:G73'); _cell(ws, 73, 6, 'Worn out not allowed', B, alignment=AV)
-    ws.merge_cells('H73:O73'); _cell(ws, 73, 8, 'Blade OK — Not worn out', N, alignment=AM)
+    _cell(ws, 73, 4, 'once', B, alignment=AC); _cell(ws, 73, 5, 'per 20 days', B, alignment=AC)
+    ws.merge_cells('F73:G73'); _cell(ws, 73, 6, 'Worn out not allowed, replace after 20 days', B, alignment=AV)
+    ws.merge_cells('H73:O73'); _cell(ws, 73, 8, 'Blade OK — Cycle: 20 days', N, alignment=AM)
 
     # ─── Stage 18: 90° Visual inspection (rows 74-78) ───
     ws.merge_cells('A74:A78')
@@ -903,9 +903,9 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
 
     _cell(ws, 87, 3, 'Soldering current', B, alignment=AV)
     _cell(ws, 87, 4, 'once', B, alignment=AC); _cell(ws, 87, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F87:G87'); _cell(ws, 87, 6, 'As per Specification', B, alignment=AV)
-    s_current = _rr(20, 1.5)
-    ws.merge_cells('H87:N87'); _cell(ws, 87, 8, f'{s_current:.1f}A', N, alignment=AM)
+    ws.merge_cells('F87:G87'); _cell(ws, 87, 6, '17A', B, alignment=AV)
+    s_current = 17
+    ws.merge_cells('H87:N87'); _cell(ws, 87, 8, f'{s_current}A', N, alignment=AM)
     _cell(ws, 87, 15, 'OK', N, alignment=AC)
 
     _cell(ws, 88, 3, 'Soldering Quality', B, alignment=AV)
@@ -946,8 +946,11 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 92, 3, 'Visual Check', B, alignment=AV)
     _cell(ws, 92, 4, 'once', B, alignment=AC); _cell(ws, 92, 5, '5 piece', B, alignment=AC)
     ws.merge_cells('F92:G92'); _cell(ws, 92, 6, 'Potting should be properly filled, and mounting hole should be as per drawing.', B, alignment=AV)
-    ws.merge_cells('H92:I92'); _cell(ws, 92, 8, 'Visual', B, alignment=AC)
-    ws.merge_cells('K92:L92'); _cell(ws, 92, 11, 'OK', N, alignment=AC)
+    _cell(ws, 92, 8, 'OK', N, alignment=AC)
+    _cell(ws, 92, 9, 'OK', N, alignment=AC)
+    _cell(ws, 92, 10, 'OK', N, alignment=AC)
+    _cell(ws, 92, 11, 'OK', N, alignment=AC)
+    _cell(ws, 92, 12, 'OK', N, alignment=AC)
     _cell(ws, 92, 15, 'OK', N, alignment=AC)
 
     # ─── Stage 24: Curing (rows 93-95) ───

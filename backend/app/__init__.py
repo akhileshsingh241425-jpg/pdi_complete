@@ -86,7 +86,7 @@ def create_app():
         _pdi_doc_full_available = True
         print("[STARTUP] ✅ PDI Documentation routes imported successfully")
     except Exception as e:
-        print(f"[STARTUP] ❌ PDI Documentation routes FAILED to import: {e}")
+        print(f"[STARTUP] [ERROR] PDI Documentation routes FAILED to import: {e}")
         import traceback
         traceback.print_exc()
     
@@ -114,7 +114,7 @@ def create_app():
     if _pdi_doc_full_available:
         # Full PDI docs - routes already have /pdi-docs/ prefix, register at /api
         app.register_blueprint(pdi_doc_full_bp, url_prefix='/api')
-        print("[STARTUP] ✅ PDI Documentation (full) registered at /api/pdi-docs/*")
+        print("[STARTUP] [OK] PDI Documentation (full) registered at /api/pdi-docs/*")
     else:
         # Fallback v5 - routes don't have prefix, register at /api/pdi-docs
         # v5's /generate endpoint does dynamic import of full generator

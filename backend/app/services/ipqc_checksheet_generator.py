@@ -20,24 +20,24 @@ from openpyxl.worksheet.page import PageMargins
 THIN = Side(style='thin')
 THIN_BORDER = Border(left=THIN, right=THIN, top=THIN, bottom=THIN)
 
-HEADER_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")  # Light gray (theme 0 tint -0.15)
+HEADER_FILL = PatternFill(start_color="D9D9D9", end_color="D9D9D9", fill_type="solid")
 FONT_TITLE = Font(name='Calibri', size=16, bold=True)
 FONT_BOLD = Font(name='Calibri', size=11, bold=True)
 FONT_NORMAL = Font(name='Calibri', size=11)
-FONT_14 = Font(name='Calibri', size=14)            # For acceptance criteria & monitoring results
-FONT_14B = Font(name='Calibri', size=14, bold=True) # For bold size-14 cells
+FONT_14 = Font(name='Calibri', size=14)
+FONT_14B = Font(name='Calibri', size=14, bold=True)
 
 ALIGN_CENTER = Alignment(horizontal='center', vertical='center', wrap_text=True)
-ALIGN_CENTER_NW = Alignment(horizontal='center', vertical='center', wrap_text=False)  # center, no wrap
+ALIGN_CENTER_NW = Alignment(horizontal='center', vertical='center', wrap_text=False)
 ALIGN_LEFT_CENTER = Alignment(horizontal='left', vertical='center', wrap_text=True)
 ALIGN_LEFT_TOP = Alignment(horizontal='left', vertical='top', wrap_text=True)
 ALIGN_CENTER_V = Alignment(vertical='center', wrap_text=True)
-ALIGN_CENTER_V_NW = Alignment(vertical='center', wrap_text=False)  # vertical center, no wrap
+ALIGN_CENTER_V_NW = Alignment(vertical='center', wrap_text=False)
 ALIGN_TOP = Alignment(vertical='top', wrap_text=True)
 
 
 # ──────────────────────────────────────────────
-# Column widths  (from reference)
+# Column widths
 # ──────────────────────────────────────────────
 COL_WIDTHS = {
     'A': 5.22, 'B': 14.55, 'C': 22.22, 'D': 11.55, 'E': 15.22,
@@ -46,7 +46,7 @@ COL_WIDTHS = {
 }
 
 # ──────────────────────────────────────────────
-# Row heights  (from reference)
+# Row heights
 # ──────────────────────────────────────────────
 ROW_HEIGHTS = {
     3: 21, 7: 28.2, 8: 28.2, 9: 28.2, 10: 28.2, 11: 28.2, 12: 28.2,
@@ -77,7 +77,6 @@ ROW_HEIGHTS = {
 # Helper functions
 # ──────────────────────────────────────────────
 def _cell(ws, row, col, value, font=None, fill=None, alignment=None, border=None):
-    """Write to cell with optional styling."""
     cell = ws.cell(row=row, column=col, value=value)
     if font:
         cell.font = font
@@ -91,12 +90,10 @@ def _cell(ws, row, col, value, font=None, fill=None, alignment=None, border=None
 
 
 def _rr(base, tol):
-    """Random realistic value within base ± tol."""
     return round(base + random.uniform(-abs(tol), abs(tol)), 2)
 
 
 def _gen_serials(prefix, start, count=5):
-    """Generate sorted serial number strings."""
     pool = list(range(start, min(start + 200, 100000)))
     picks = sorted(random.sample(pool, min(count, len(pool))))
     return [f"{prefix}{str(n).zfill(5)}" for n in picks]
@@ -120,10 +117,6 @@ def generate_ipqc_checksheet(
     checked_by='',
     reviewed_by='',
 ):
-    """
-    Generate a filled IPQC Check Sheet in the exact reference format.
-    Returns the file path of the generated .xlsx file.
-    """
     if date is None:
         date = datetime.now().strftime('%Y-%m-%d')
 
@@ -131,22 +124,19 @@ def generate_ipqc_checksheet(
     ws = wb.active
     ws.title = 'IPQC'
 
-    # ── Column widths ──
     for col_letter, width in COL_WIDTHS.items():
         ws.column_dimensions[col_letter].width = width
 
-    # ── Row heights ──
     for r, h in ROW_HEIGHTS.items():
         ws.row_dimensions[r].height = h
 
     # ══════════════════════════════════════════
     # ROWS 1-6: Header block
     # ══════════════════════════════════════════
-    # A1:C3  — Logo / company placeholder (merged)
     ws.merge_cells('A1:C3')
     _cell(ws, 1, 1, '', FONT_BOLD, alignment=Alignment(horizontal='center'))
 
-    # Insert Gautam Solar logo
+    # Logo — smaller size
     logo_path = os.path.join(os.path.dirname(__file__), 'ipqc_logo.png')
     if os.path.exists(logo_path):
         logo_img = XlImage(logo_path)
@@ -154,15 +144,12 @@ def generate_ipqc_checksheet(
         logo_img.height = 38
         ws.add_image(logo_img, 'A1')
 
-    # D1:K2 — Title
     ws.merge_cells('D1:K2')
     _cell(ws, 1, 4, 'Gautam Solar Private Limited', FONT_TITLE, alignment=ALIGN_CENTER_NW)
 
-    # D3:K3 — Check Sheet Title
     ws.merge_cells('D3:K3')
     _cell(ws, 3, 4, 'IPQC Check Sheet', FONT_TITLE, alignment=ALIGN_CENTER)
 
-    # Document info (right side)
     ws.merge_cells('L1:M1'); _cell(ws, 1, 12, 'Document No.', FONT_BOLD, alignment=ALIGN_CENTER_NW)
     ws.merge_cells('N1:O1'); _cell(ws, 1, 14, 'GSPL/IPQC/IPC/003', FONT_BOLD, alignment=ALIGN_CENTER_NW)
     ws.merge_cells('L2:M2'); _cell(ws, 2, 12, 'Issue Date', FONT_BOLD, alignment=ALIGN_CENTER_NW)
@@ -170,18 +157,16 @@ def generate_ipqc_checksheet(
     ws.merge_cells('L3:M3'); _cell(ws, 3, 12, 'Rev. No./Rev.Date ', FONT_BOLD, alignment=ALIGN_CENTER_NW)
     ws.merge_cells('N3:O3'); _cell(ws, 3, 14, '01/30-08-2025', FONT_BOLD, alignment=ALIGN_CENTER_NW)
 
-    # Row 4 — Date / Time / Shift / PO
     ws.merge_cells('A4:C4')
     _cell(ws, 4, 1, f'Date :-  {date}', FONT_BOLD, alignment=Alignment(horizontal='left', vertical='center'))
     _cell(ws, 4, 4, f' Time :-  {_shift_time(shift)}', FONT_BOLD, alignment=ALIGN_CENTER)
     shift_label = 'Day' if shift in ('Day', 'A') else 'Night'
     _cell(ws, 4, 6, f'Shift  {shift_label}', FONT_BOLD, alignment=ALIGN_CENTER_V)
-    _cell(ws, 4, 5, None, FONT_BOLD, alignment=ALIGN_CENTER)  # E4 style
-    _cell(ws, 4, 7, None, FONT_BOLD, alignment=ALIGN_CENTER_V)  # G4 style
+    _cell(ws, 4, 5, None, FONT_BOLD, alignment=ALIGN_CENTER)
+    _cell(ws, 4, 7, None, FONT_BOLD, alignment=ALIGN_CENTER_V)
     ws.merge_cells('H4:O4')
     _cell(ws, 4, 8, f'Po.no.:- {po_number}', FONT_BOLD, alignment=ALIGN_CENTER)
 
-    # Row 5-6 — Column headers
     ws.merge_cells('A5:A6'); _cell(ws, 5, 1, 'Sr.No.', FONT_BOLD, HEADER_FILL, ALIGN_CENTER_NW)
     ws.merge_cells('B5:B6'); _cell(ws, 5, 2, 'Stage', FONT_BOLD, HEADER_FILL, ALIGN_CENTER_NW)
     ws.merge_cells('C5:C6'); _cell(ws, 5, 3, 'Check point', FONT_BOLD, HEADER_FILL, ALIGN_CENTER_V)
@@ -194,36 +179,34 @@ def generate_ipqc_checksheet(
     ws.merge_cells('O5:O6'); _cell(ws, 5, 15, 'Remarks,if any', FONT_BOLD, HEADER_FILL, ALIGN_CENTER)
 
     # ══════════════════════════════════════════
-    # ROWS 7-139:  All 33 checkpoints
+    # ROWS 7-139: All 33 checkpoints
     # ══════════════════════════════════════════
     _write_all_stages(ws, serial_prefix, serial_start, cell_manufacturer, cell_efficiency,
                       jb_cable_length, golden_module_number, shift, date)
 
-    # Row 140 — Checked By / Reviewed By
+    # Row 140
     ws.merge_cells('A140:B140'); _cell(ws, 140, 1, 'Checked By', FONT_BOLD, alignment=Alignment(horizontal='left', vertical='center', wrap_text=True))
     ws.merge_cells('C140:E140'); _cell(ws, 140, 3, checked_by, FONT_BOLD, alignment=ALIGN_CENTER)
     ws.merge_cells('F140:K140'); _cell(ws, 140, 6, '', FONT_BOLD, alignment=ALIGN_CENTER)
     ws.merge_cells('L140:M140'); _cell(ws, 140, 12, 'Reviewed By', FONT_BOLD, alignment=ALIGN_CENTER)
     ws.merge_cells('N140:O140'); _cell(ws, 140, 14, reviewed_by, FONT_NORMAL, alignment=ALIGN_CENTER)
 
-    # ── Apply borders to all cells ──
     for row in ws.iter_rows(min_row=1, max_row=140, min_col=1, max_col=15):
         for cell in row:
             cell.border = THIN_BORDER
 
-    # ── Page Setup (match IPQC_FILLED_FINAL.xlsx exactly) ──
     ws.page_setup.orientation = 'landscape'
     ws.page_setup.paperSize = 9  # A4
-    ws.page_setup.scale = 71
+    ws.page_setup.fitToWidth = 1
     ws.page_setup.fitToHeight = 0
-    ws.page_margins = PageMargins(left=0.25, right=0.25, top=0.507, bottom=0.14, header=0.0, footer=0.0)
+    ws.page_setup.scale = 100   # let fitToWidth handle scaling
+    ws.page_margins = PageMargins(left=0.2, right=0.2, top=0.35, bottom=0.2, header=0.0, footer=0.0)
     ws.print_options.horizontalCentered = True
     ws.print_area = 'A1:O140'
     ws.print_title_rows = '1:6'
     ws.sheet_properties.pageSetUpPr.fitToPage = True
 
-    # ── Save ──
-    output_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'generated_pdfs')
+    output_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'generated_pdfs')
     os.makedirs(output_dir, exist_ok=True)
     safe_date = date.replace('-', '') if date else datetime.now().strftime('%Y%m%d')
     filename = f"IPQC_CheckSheet_{safe_date}_Shift{shift}_{datetime.now().strftime('%H%M%S')}.xlsx"
@@ -232,9 +215,6 @@ def generate_ipqc_checksheet(
     return filepath
 
 
-# ──────────────────────────────────────────────
-# Shift time helper
-# ──────────────────────────────────────────────
 def _shift_time(shift):
     mapping = {'Day': '08:00 AM - 08:00 PM', 'Night': '08:00 PM - 08:00 AM',
                'A': '08:00 AM - 08:00 PM', 'B': '08:00 PM - 08:00 AM'}
@@ -242,58 +222,37 @@ def _shift_time(shift):
 
 
 # ══════════════════════════════════════════════
-# All 33 Stages  (rows 7 – 139)
+# All 33 Stages (rows 7 – 139)
 # ══════════════════════════════════════════════
 def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, shift, date):
-    """Write every stage exactly matching the reference template."""
 
-    # Convenience aliases
     B = FONT_BOLD
     N = FONT_NORMAL
-    F14 = FONT_14       # size=14, not bold (for acceptance criteria spans & monitoring)
-    F14B = FONT_14B     # size=14, bold
+    F14 = FONT_14
+    F14B = FONT_14B
     AC = ALIGN_CENTER
-    ACNW = ALIGN_CENTER_NW  # center, no wrap
+    ACNW = ALIGN_CENTER_NW
     AV = ALIGN_CENTER_V
-    AVNW = ALIGN_CENTER_V_NW  # vertical center, no wrap
+    AVNW = ALIGN_CENTER_V_NW
     ALT = ALIGN_LEFT_TOP
-    AT = ALIGN_TOP      # vertical top, wrap, no horiz
-    # Monitoring result alignment
+    AT = ALIGN_TOP
     AM = Alignment(horizontal='left', vertical='center', wrap_text=True)
-
-    def sno(row_start, row_end=None):
-        """Generate sorted serial numbers list for multi-row serial areas"""
-        nums = _gen_serials(prefix, start, 5)
-        return nums
 
     # ─── Stage 1: Shop Floor (rows 7-8) ───
     ws.merge_cells('A7:A8')
     _cell(ws, 7, 1, 1, B, alignment=ACNW)
     ws.merge_cells('B7:B8')
-    # Only set row 7 — row 8 is part of the merge
-    # But for B column, we split B7=Shop Floor (merged with B8)
-    # Actually B7:B8 is NOT merged in reference — let me check
-    # From reference: B7='Shop Floor', B8 has no value  — but they aren't merged per se
-    # Actually in the merged cells list: there's no B7:B8, just individual cells
-    # Let me re-check: B9:B10, B11:B13  etc. are merged, but B7 has value and B8 doesn't
-    # So B7='Shop Floor' spans conceptually but isn't merged in all cases
-    # Let me just write each cell individually following the reference exactly
-    
-    # Actually wait — let me re-examine the merged cells from the reference output...
-    # B7:B8 is listed as merged. Let me do it properly.
     _cell(ws, 7, 2, 'Shop Floor', B, alignment=ACNW)
     _cell(ws, 7, 3, 'Temperature', B, alignment=AV)
     _cell(ws, 7, 4, 'once', B, alignment=AC)
     _cell(ws, 7, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F7:G7')
     _cell(ws, 7, 6, 'Temp. 25±3°C', B, alignment=AV)
-    # Monitoring result
     temp_val = _rr(25, 2)
     ws.merge_cells('H7:N7')
     _cell(ws, 7, 8, f'Time: {_shift_start(shift)}   Temp: {temp_val}°C', N, alignment=AM)
     _cell(ws, 7, 15, 'OK' if 22 <= temp_val <= 28 else 'High', N, alignment=AC)
 
-    # Row 8: Humidity
     _cell(ws, 8, 3, 'Humidity', B, alignment=AV)
     _cell(ws, 8, 4, 'once', B, alignment=AC)
     _cell(ws, 8, 5, 'per shift', B, alignment=AC)
@@ -347,7 +306,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 12, 4, 'once', B, alignment=AC)
     _cell(ws, 12, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F12:G12')
-    _cell(ws, 12, 6, '0.695–0.701mm', B, alignment=AVNW)
+    _cell(ws, 12, 6, 'As per Specification\nThickness: 0.695–0.701mm', B, alignment=AVNW)
     el = _rr(2378, 0.8); ew = _rr(1125, 0.8); et = round(random.uniform(0.695, 0.701), 3)
     ws.merge_cells('H12:N12')
     _cell(ws, 12, 8, f'{el}mm x {ew}mm x {et}mm', N, alignment=AM)
@@ -362,7 +321,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 13, 8, 'No Damage, Uniform Embossing', N, alignment=AM)
     _cell(ws, 13, 15, 'OK', N, alignment=AC)
 
-    # ─── Stage 4:  EVA/EPE Soldering (row 14) ───
+    # ─── Stage 4: EVA/EPE Soldering (row 14) ───
     _cell(ws, 14, 1, 4, B, alignment=AC)
     _cell(ws, 14, 2, 'Eva/EPE Soldering at edge(If Applicable)', B, alignment=AC)
     _cell(ws, 14, 3, 'Soldering Temprature and Quality of Soldering', B, alignment=AV)
@@ -426,65 +385,66 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('B21:B29')
     _cell(ws, 21, 2, 'Tabber & stringer', B, alignment=AC)
 
-    # 21 — ATW Temp Validation
     _cell(ws, 21, 3, 'Verification of Process Parameter', B, alignment=AV)
     _cell(ws, 21, 4, 'once', B, alignment=AC); _cell(ws, 21, 5, 'Month', B, alignment=AC)
     ws.merge_cells('F21:G21'); _cell(ws, 21, 6, 'ATW Stringer specification', F14, alignment=AV)
     ws.merge_cells('H21:N21'); _cell(ws, 21, 8, 'ATW Temprature Validation — Verified', F14, alignment=AVNW)
     _cell(ws, 21, 15, 'OK', N, alignment=AC)
 
-    # 22-23 — Visual Check after Stringing (TS columns)
+    # FIX 5: Stage 6 — TS04B value must NOT go into Remarks (col O=15)
+    # Only use H to N (cols 8-14), col 15 = Remarks stays separate
     ws.merge_cells('C22:C23')
     _cell(ws, 22, 3, 'Visual Check after Stringing', B, alignment=AV)
     ws.merge_cells('D22:D23'); _cell(ws, 22, 4, 'once', B, alignment=AC)
     ws.merge_cells('E22:E23'); _cell(ws, 22, 5, '1 String/TS shift', B, alignment=AC)
     ws.merge_cells('F22:G23'); _cell(ws, 22, 6, 'TS Visual Criteria', F14, alignment=AV)
-    _cell(ws, 22, 15, 'OK', N, alignment=AC)
-    # TS columns: H=TS01A, I=TS01B, J=TS02A, K=TS02B, L=TS03A, M=TS03B, N=TS04A
-    ts_headers_22 = ['TS01A', 'TS01B', 'TS02A', 'TS02B', 'TS03A', 'TS03B', 'TS04A']
-    for i, h in enumerate(ts_headers_22):
-        _cell(ws, 22, 8+i, h, B, alignment=AC)
+    # Headers in H22..N22 only (8 TS headers across 7 cols H-N = use H,I,J,K,L,M,N)
+    ts_headers = ['TS01A', 'TS01B', 'TS02A', 'TS02B', 'TS03A', 'TS03B', 'TS04A']
+    for i, h in enumerate(ts_headers):
+        _cell(ws, 22, 8+i, h, B, alignment=AC)  # cols H(8) to N(14)
+    # TS04B gets its own merged area within H-N, but since we only have 7 slots for 7 headers
+    # we place TS04B value in N22 header and the result in N23
+    # Actually original had 8 TS strings across H-O — FIX: limit to H-N only (7 cols)
+    # Show only TS01A..TS04A in headers (7), drop TS04B from this row to keep O free
+    # Row 23: results
     for i in range(7):
         _cell(ws, 23, 8+i, 'OK', N, alignment=AC)
+    _cell(ws, 22, 15, 'OK', N, alignment=AC)  # Remarks = OK
 
-    # 24-25 — EL Image of Strings
     ws.merge_cells('C24:C25')
     _cell(ws, 24, 3, 'EL Image of Strings', B, alignment=AV)
     ws.merge_cells('D24:D25'); _cell(ws, 24, 4, 'once', B, alignment=AC)
     ws.merge_cells('E24:E25'); _cell(ws, 24, 5, '1 String/TS/shift', B, alignment=AC)
     ws.merge_cells('F24:G25'); _cell(ws, 24, 6, 'TS EL Criteria', F14, alignment=AV)
-    _cell(ws, 24, 15, 'OK', N, alignment=AC)
-    for i, h in enumerate(ts_headers_22):
+    for i, h in enumerate(ts_headers):
         _cell(ws, 24, 8+i, h, B, alignment=AC)
     for i in range(7):
         _cell(ws, 25, 8+i, 'OK', N, alignment=AC)
+    _cell(ws, 24, 15, 'OK', N, alignment=AC)
 
-    # 26-27 — String length
     ws.merge_cells('C26:C27')
     _cell(ws, 26, 3, 'String length ', B, alignment=AV)
     ws.merge_cells('D26:D29'); _cell(ws, 26, 4, 'once', B, alignment=AC)
     ws.merge_cells('E26:E29'); _cell(ws, 26, 5, '1 String/Stringer/ shift', B, alignment=AC)
     ws.merge_cells('F26:G29'); _cell(ws, 26, 6, 'Refer Process Card ', B, alignment=AV)
-    for i, h in enumerate(ts_headers_22):
+    for i, h in enumerate(ts_headers):
         _cell(ws, 26, 8+i, h, B, alignment=AC)
     for i in range(7):
         sl = _rr(1163, 0.8)
         _cell(ws, 27, 8+i, f'{sl:.1f}', N, alignment=AC)
 
-    # 28-29 — Cell to Cell Gap
     ws.merge_cells('C28:C29')
     _cell(ws, 28, 3, ' Cell to Cell Gap', B, alignment=AV)
-    for i, h in enumerate(ts_headers_22):
+    for i, h in enumerate(ts_headers):
         _cell(ws, 28, 8+i, h, B, alignment=AC)
     for i in range(7):
-        gap = _rr(0.77, 0.05)
+        gap = round(random.uniform(1.3, 1.6), 2)
         _cell(ws, 29, 8+i, f'{gap:.2f}', N, alignment=AC)
 
-    # 30-31 — Peel Strength (Row 30-31, merged A30:A31)
     ws.merge_cells('A30:A31')
-    _cell(ws, 30, 1, None, B, alignment=AC)  # A30 style
+    _cell(ws, 30, 1, None, B, alignment=AC)
     ws.merge_cells('B30:B31')
-    _cell(ws, 30, 2, None, B, alignment=AC)  # B30 style
+    _cell(ws, 30, 2, None, B, alignment=AC)
     ws.merge_cells('C30:C31')
     _cell(ws, 30, 3, 'Verification of Soldering Peel Strength', B, alignment=AV)
     ws.merge_cells('D30:D31'); _cell(ws, 30, 4, '2 cell each stringer Front & Back.', B, alignment=AC)
@@ -502,22 +462,19 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('B32:B42')
     _cell(ws, 32, 2, 'Auto bussing , layup & Tapping ', B, alignment=AC)
 
-    # 32 — String to String Gap
     _cell(ws, 32, 3, 'String to String Gap', B, alignment=AV)
     _cell(ws, 32, 4, 'once', B, alignment=AC); _cell(ws, 32, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F32:G35')  # Reference merges F32:G35
+    ws.merge_cells('F32:G35')
     _cell(ws, 32, 6, 'Refer Process Card & Module Drawing', B, alignment=AV)
     ws.merge_cells('H32:N32')
-    ss_gap = round(random.uniform(1.3, 1.6), 2)
+    ss_gap = _rr(2.5, 0.5)
     _cell(ws, 32, 8, f'{ss_gap:.2f}mm', N, alignment=AM)
     _cell(ws, 32, 15, 'OK', N, alignment=AC)
 
-    # 33-35 — Cell edge to Glass edge
     ws.merge_cells('C33:C35')
     _cell(ws, 33, 3, 'Cell edge to Glass edge distance (Top,bottom & sides)', B, alignment=AV)
     ws.merge_cells('D33:D35'); _cell(ws, 33, 4, 'once', B, alignment=AC)
     ws.merge_cells('E33:E35'); _cell(ws, 33, 5, 'per shift', B, alignment=AC)
-    # No acceptance criteria merged in ref, just individual rows
     ws.merge_cells('H33:N33')
     top_dist = _rr(19.72, 0.3)
     _cell(ws, 33, 8, f'TOP: {top_dist}mm', B, alignment=AM)
@@ -529,7 +486,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 35, 8, f'Sides: {side_dist}mm', B, alignment=ALT)
     _cell(ws, 33, 15, 'OK', N, alignment=AC)
 
-    # 36 — Soldering Peel Strength busbar
     _cell(ws, 36, 3, 'Soldering Peel Strength b/w Ribbon to busbar interconnector', B, alignment=AV)
     _cell(ws, 36, 4, 'once', B, alignment=AC); _cell(ws, 36, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F36:G36'); _cell(ws, 36, 6, '≥2N', B, alignment=AV)
@@ -538,12 +494,11 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 36, 8, f'Ribbon to busbar peel test: {peel_bb:.2f}N', F14, alignment=AV)
     _cell(ws, 36, 15, 'OK', N, alignment=AC)
 
-    # 37-38 — Terminal busbar to edge of Cell
     ws.merge_cells('D37:D38'); _cell(ws, 37, 4, 'once', B, alignment=AC)
     ws.merge_cells('E37:E38'); _cell(ws, 37, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('C37:C38')
     _cell(ws, 37, 3, 'Terminal busbar to edge of Cell', B, alignment=AV)
-    ws.merge_cells('F37:G37'); _cell(ws, 37, 6, '132 Cell module drawing', F14, alignment=AV)
+    ws.merge_cells('F37:G37'); _cell(ws, 37, 6, '132 Cell module drawing\nRange: 3.15–3.22mm', F14, alignment=AV)
     ws.merge_cells('F38:G38'); _cell(ws, 38, 6, 'Refer Module Drawing: GSPL/N144/G/001', F14, alignment=AV)
     ws.merge_cells('H37:N37')
     tb_edge = round(random.uniform(3.15, 3.22), 2)
@@ -552,7 +507,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 38, 8, 'As per Drawing', N, alignment=AM)
     _cell(ws, 37, 15, 'OK', N, alignment=AC)
 
-    # 39 — Soldering Quality Ribbon to busbar
     _cell(ws, 39, 3, 'Soldering Quality of Ribbon to busbar', B, alignment=AV)
     _cell(ws, 39, 4, 'Every 4h', B, alignment=AC); _cell(ws, 39, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F39:G39'); _cell(ws, 39, 6, 'No Dry/Poor Soldering', B, alignment=AV)
@@ -561,29 +515,27 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('M39:N39'); _cell(ws, 39, 13, 'OK', N, alignment=AC)
     _cell(ws, 39, 15, 'OK', N, alignment=AC)
 
-    # 40 — Top & Bottom Creepage Distance
+    # Creepage: 12±0.15mm → range 11.85 to 12.15
     _cell(ws, 40, 3, 'Top & Bottom Creepage Distance/Terminal busbar to Glass Edge.', B, alignment=AV)
     _cell(ws, 40, 4, 'Every 4h', B, alignment=AC); _cell(ws, 40, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F40:G40'); _cell(ws, 40, 6, 'Creepage distance should be as per process card/Drawing', B, alignment=AV)
-    cr_top = round(random.uniform(11.85, 12.15), 2)
-    cr_bot = round(random.uniform(11.85, 12.15), 2)
-    _cell(ws, 40, 8, f'Top: {cr_top}mm', N, alignment=AM)
-    _cell(ws, 40, 9, f'Bottom: {cr_bot}mm', N, alignment=AM)
-    _cell(ws, 40, 10, 'OK', N, alignment=AC)
-    _cell(ws, 40, 11, 'OK', N, alignment=AC)
-    _cell(ws, 40, 12, 'OK', N, alignment=AC)
-    _cell(ws, 40, 13, 'OK', N, alignment=AC)
-    _cell(ws, 40, 14, 'OK', N, alignment=AC)
+    ws.merge_cells('F40:G40'); _cell(ws, 40, 6, 'Creepage distance: 12±0.15mm\n(11.85–12.15mm)', B, alignment=AV)
+    cr_top  = round(random.uniform(11.85, 12.15), 2)
+    cr_bot  = round(random.uniform(11.85, 12.15), 2)
+    cr_side = round(random.uniform(11.85, 12.15), 2)
+    ws.merge_cells('H40:I40')
+    _cell(ws, 40, 8,  f'Top: {cr_top}mm',  N, alignment=AM)
+    ws.merge_cells('J40:K40')
+    _cell(ws, 40, 10, f'Bottom: {cr_bot}mm', N, alignment=AM)
+    ws.merge_cells('L40:N40')
+    _cell(ws, 40, 12, f'Side: {cr_side}mm',  N, alignment=AM)
     _cell(ws, 40, 15, 'OK', N, alignment=AC)
 
-    # 41 — Verification of Process Parameter
     _cell(ws, 41, 3, 'Verification of Process Parameter', B, alignment=AV)
     _cell(ws, 41, 4, 'once', B, alignment=AC); _cell(ws, 41, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F41:G41'); _cell(ws, 41, 6, 'Specification for Auto Bussing', F14, alignment=AV)
     ws.merge_cells('H41:N41'); _cell(ws, 41, 8, 'Verified — As per Specification', N, alignment=AM)
     _cell(ws, 41, 15, 'OK', N, alignment=AC)
 
-    # 42 — Quality of auto taping
     _cell(ws, 42, 3, 'Quality of auto taping', B, alignment=AV)
     _cell(ws, 42, 4, 'Every 4h', B, alignment=AC); _cell(ws, 42, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F42:G42'); _cell(ws, 42, 6, 'Taping should be proper,no Cell Shifting allowed', B, alignment=AV)
@@ -617,7 +569,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
 
     _cell(ws, 45, 3, 'EVA/EPE dimension(L*W*T)', B, alignment=AV)
     _cell(ws, 45, 4, 'once', B, alignment=AC); _cell(ws, 45, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F45:G45'); _cell(ws, 45, 6, '0.695–0.702mm', B, alignment=AVNW)
+    ws.merge_cells('F45:G45'); _cell(ws, 45, 6, 'As per Specification\nThickness: 0.695–0.702mm', B, alignment=AVNW)
     ws.merge_cells('H45:N45')
     eva2l = _rr(2378, 0.8); eva2w = _rr(1125, 0.8); eva2t = round(random.uniform(0.695, 0.702), 3)
     _cell(ws, 45, 8, f'{eva2l}mm x {eva2w}mm x {eva2t}mm', N, alignment=AM)
@@ -644,11 +596,10 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 47, 8, f'{bg_l}mm x {bg_w}mm x {bg_t}mm', N, alignment=AM)
     ws.merge_cells('O47:O48'); _cell(ws, 47, 15, 'OK', N, alignment=AC)
 
-    # 49-50: Holes
     ws.merge_cells('A49:A50')
     _cell(ws, 49, 1, '', B, alignment=AC)
     ws.merge_cells('B49:B50')
-    _cell(ws, 49, 2, None, B, alignment=AC)  # B49 style
+    _cell(ws, 49, 2, None, B, alignment=AC)
     ws.merge_cells('C49:C50')
     _cell(ws, 49, 3, 'No. of Holes/ Holes dimension', B, alignment=AV)
     ws.merge_cells('D49:D50'); _cell(ws, 49, 4, 'once', B, alignment=AC)
@@ -669,16 +620,12 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('D51:D52'); _cell(ws, 51, 4, '5 pieces', B, alignment=AC)
     ws.merge_cells('E51:E52'); _cell(ws, 51, 5, 'per shift', B, alignment=AC)
     ws.merge_cells('F51:G52'); _cell(ws, 51, 6, 'No  cracks/ breaks in busbar &properly flattened without bending and twisting', B, alignment=AV)
-    ws.merge_cells('H51:I52'); _cell(ws, 51, 8, 'S.No', B, alignment=AC)
-    snos_bb = _gen_serials(prefix, start, 4)
-    _cell(ws, 51, 10, snos_bb[0] if len(snos_bb)>0 else '', N, alignment=AC)
-    ws.merge_cells('K51:L51'); _cell(ws, 51, 11, snos_bb[1] if len(snos_bb)>1 else '', N, alignment=AC)
-    _cell(ws, 51, 13, snos_bb[2] if len(snos_bb)>2 else '', N, alignment=AC)
-    _cell(ws, 51, 14, snos_bb[3] if len(snos_bb)>3 else '', N, alignment=AC)
-    _cell(ws, 52, 10, 'OK', N, alignment=AC)
-    ws.merge_cells('K52:L52'); _cell(ws, 52, 11, 'OK', N, alignment=AC)
-    _cell(ws, 52, 13, 'OK', N, alignment=AC)
-    _cell(ws, 52, 14, 'OK', N, alignment=AC)
+    # Sirf OK — 5 blocks across H to N (no serial, no Result header)
+    ws.merge_cells('H51:H52'); _cell(ws, 51, 8,  'OK', N, alignment=AC)
+    ws.merge_cells('I51:J52'); _cell(ws, 51, 9,  'OK', N, alignment=AC)
+    ws.merge_cells('K51:K52'); _cell(ws, 51, 11, 'OK', N, alignment=AC)
+    ws.merge_cells('L51:M52'); _cell(ws, 51, 12, 'OK', N, alignment=AC)
+    ws.merge_cells('N51:N52'); _cell(ws, 51, 14, 'OK', N, alignment=AC)
     ws.merge_cells('O51:O52'); _cell(ws, 51, 15, 'OK', N, alignment=AC)
 
     # ─── Stage 12: Pre lamination EL & Visual (rows 53-57) ───
@@ -694,7 +641,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('F53:G55')
     _cell(ws, 53, 6, 'Pre EL Inspection Criteria', F14, alignment=AV)
 
-    # Serial number rows for Pre EL
     snos_pre = _gen_serials(prefix, start, 5)
     for idx, r in enumerate([53, 54, 55]):
         ws.merge_cells(f'H{r}:I{r}'); _cell(ws, r, 8, 'S.No', B, alignment=AC)
@@ -771,11 +717,10 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('H64:N64'); _cell(ws, 64, 8, 'Clean — No EVA Residue', N, alignment=AM)
     _cell(ws, 64, 15, 'OK', N, alignment=AC)
 
-    # 65-66 — Peel test & Gel content (these are separate rows under stage 15 conceptually)
     ws.merge_cells('A65:A66')
-    _cell(ws, 65, 1, None, B, alignment=AC)  # A65 style
+    _cell(ws, 65, 1, None, B, alignment=AC)
     ws.merge_cells('B65:B66')
-    _cell(ws, 65, 2, None, B, alignment=AC)  # B65 style
+    _cell(ws, 65, 2, None, B, alignment=AC)
     ws.merge_cells('D65:D66'); _cell(ws, 65, 4, 'All position', B, alignment=AC)
     ws.merge_cells('E65:E66'); _cell(ws, 65, 5, 'All laminators to be coverd in a month', B, alignment=AC)
 
@@ -790,6 +735,7 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 66, 15, 'OK', N, alignment=AC)
 
     # ─── Stage 16: Auto Tape Removing (row 67) ───
+    # FIX 4a: Stage 16 — saare columns fill karo different words se
     _cell(ws, 67, 1, 16, B, alignment=AC)
     _cell(ws, 67, 2, 'Auto Tape Removing  (If Applicable)', B, alignment=AC)
     _cell(ws, 67, 3, 'Visual Check after Lamination', B, alignment=AV)
@@ -797,7 +743,10 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('F67:G67')
     _cell(ws, 67, 6, 'Check Tape Removing Should be smooth and No visual bubble Should be found. ', B, alignment=AV)
     ws.merge_cells('H67:I67'); _cell(ws, 67, 8, 'Smooth', N, alignment=AC)
-    ws.merge_cells('K67:L67'); _cell(ws, 67, 11, 'No Bubble', N, alignment=AC)
+    _cell(ws, 67, 10, 'No Bubble', N, alignment=AC)         # J
+    _cell(ws, 67, 11, 'Uniform', N, alignment=AC)           # K
+    ws.merge_cells('L67:M67'); _cell(ws, 67, 12, 'No Residue', N, alignment=AC)  # L:M
+    _cell(ws, 67, 14, 'Clean Edge', N, alignment=AC)        # N
     _cell(ws, 67, 15, 'OK', N, alignment=AC)
 
     # ─── Stage 17: Auto Edge Trimming (rows 68-73) ───
@@ -821,8 +770,8 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
 
     _cell(ws, 73, 3, 'Trimming Blade life cycle', B, alignment=AV)
     _cell(ws, 73, 4, 'once', B, alignment=AC); _cell(ws, 73, 5, 'per 20 days', B, alignment=AC)
-    ws.merge_cells('F73:G73'); _cell(ws, 73, 6, 'Worn out not allowed, replace after 20 days', B, alignment=AV)
-    ws.merge_cells('H73:O73'); _cell(ws, 73, 8, 'Blade OK — Cycle: 20 days', N, alignment=AM)
+    ws.merge_cells('F73:G73'); _cell(ws, 73, 6, 'Worn out not allowed\nCycle: 20 Days', B, alignment=AV)
+    ws.merge_cells('H73:O73'); _cell(ws, 73, 8, 'Blade OK — Not worn out | Cycle Time: 20 Days', N, alignment=AM)
 
     # ─── Stage 18: 90° Visual inspection (rows 74-78) ───
     ws.merge_cells('A74:A78')
@@ -854,7 +803,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('H79:N79'); _cell(ws, 79, 8, 'Uniform — Back sealing proper', N, alignment=AM)
     _cell(ws, 79, 15, 'OK', N, alignment=AC)
 
-    # 80-81 Glue weights
     _cell(ws, 80, 3, 'Short Side Glue Weight', B, alignment=AV)
     _cell(ws, 80, 4, 'once', B, alignment=AC); _cell(ws, 80, 5, 'Per shift', B, alignment=AC)
     ws.merge_cells('F80:G81'); _cell(ws, 80, 6, 'Fill as per Specification', B, alignment=AV)
@@ -863,7 +811,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 81, 3, 'Long Side Glue Weight', B, alignment=AV)
     _cell(ws, 81, 4, 'once', B, alignment=AC); _cell(ws, 81, 5, 'Per shift', B, alignment=AC)
 
-    # 82 — Anodizing
     _cell(ws, 82, 3, 'Anodizing Thickness', B, alignment=AV)
     _cell(ws, 82, 4, 'once', B, alignment=AC); _cell(ws, 82, 5, 'Per shift', B, alignment=AC)
     ws.merge_cells('F82:G82'); _cell(ws, 82, 6, '≥15 micron', B, alignment=AV)
@@ -905,9 +852,8 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
 
     _cell(ws, 87, 3, 'Soldering current', B, alignment=AV)
     _cell(ws, 87, 4, 'once', B, alignment=AC); _cell(ws, 87, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F87:G87'); _cell(ws, 87, 6, '17A', B, alignment=AV)
-    s_current = 17
-    ws.merge_cells('H87:N87'); _cell(ws, 87, 8, f'{s_current}A', N, alignment=AM)
+    ws.merge_cells('F87:G87'); _cell(ws, 87, 6, 'As per Specification', B, alignment=AV)
+    ws.merge_cells('H87:N87'); _cell(ws, 87, 8, '17A', N, alignment=AM)
     _cell(ws, 87, 15, 'OK', N, alignment=AC)
 
     _cell(ws, 88, 3, 'Soldering Quality', B, alignment=AV)
@@ -942,17 +888,17 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     ws.merge_cells('L91:N91'); _cell(ws, 91, 12, f'Time: {_shift_mid(shift)}', B, alignment=ALT)
     _cell(ws, 91, 15, 'OK', N, alignment=AC)
 
-    # ─── Stage 23: OLE Potting Inspection (row 92) ───
+    # FIX: Stage 23 — 5 baar OK alag alag columns mein
     _cell(ws, 92, 1, 23, B, alignment=AC)
     _cell(ws, 92, 2, 'OLE Potting Inspection  (If Applicable)', B, alignment=AC)
     _cell(ws, 92, 3, 'Visual Check', B, alignment=AV)
     _cell(ws, 92, 4, 'once', B, alignment=AC); _cell(ws, 92, 5, '5 piece', B, alignment=AC)
     ws.merge_cells('F92:G92'); _cell(ws, 92, 6, 'Potting should be properly filled, and mounting hole should be as per drawing.', B, alignment=AV)
-    _cell(ws, 92, 8, 'OK', N, alignment=AC)
-    _cell(ws, 92, 9, 'OK', N, alignment=AC)
-    _cell(ws, 92, 10, 'OK', N, alignment=AC)
-    _cell(ws, 92, 11, 'OK', N, alignment=AC)
-    _cell(ws, 92, 12, 'OK', N, alignment=AC)
+    _cell(ws, 92, 8,  'OK', N, alignment=AC)   # H
+    _cell(ws, 92, 9,  'OK', N, alignment=AC)   # I
+    _cell(ws, 92, 10, 'OK', N, alignment=AC)   # J
+    _cell(ws, 92, 11, 'OK', N, alignment=AC)   # K
+    ws.merge_cells('L92:N92'); _cell(ws, 92, 12, 'OK', N, alignment=AC)  # L:N
     _cell(ws, 92, 15, 'OK', N, alignment=AC)
 
     # ─── Stage 24: Curing (rows 93-95) ───
@@ -1058,9 +1004,8 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     _cell(ws, 107, 3, 'DCW/IR/Ground Continuity', B, alignment=AV)
     ws.merge_cells('D107:D112'); _cell(ws, 107, 4, '5 pieces', B, alignment=AC)
     ws.merge_cells('E107:E112'); _cell(ws, 107, 5, 'per shift', B, alignment=AC)
-    ws.merge_cells('F107:G112'); _cell(ws, 107, 6, '≤50µA , >40M\u2126.m2 ,(0-100) m\u2126', B, alignment=AV)
+    ws.merge_cells('F107:G112'); _cell(ws, 107, 6, '≤50µA , >40MΩ.m² ,(0-100) mΩ', B, alignment=AV)
 
-    # Header row for Hipot
     ws.merge_cells('H107:J107')
     _cell(ws, 107, 8, 'S.No', B, alignment=AC)
     ws.merge_cells('K107:L107'); _cell(ws, 107, 11, 'DCW', B, alignment=AC)
@@ -1072,13 +1017,15 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
         ws.merge_cells(f'H{r}:J{r}')
         _cell(ws, r, 8, snos_hipot[idx] if idx < len(snos_hipot) else '', N, alignment=AM)
         ws.merge_cells(f'K{r}:L{r}')
-        dcw_v = round(random.uniform(3.0, 6.0), 2)
-        dcw_i = round(random.uniform(1.1, 1.5), 1)
-        _cell(ws, r, 11, f'{dcw_v} GΩ, {dcw_i} µA', N, alignment=AC)
-        ir_v = round(random.uniform(2.5, 8.0), 2)
-        _cell(ws, r, 13, f'{ir_v} GΩ', N, alignment=AC)
-        gnd = round(random.uniform(3.5, 5.0), 2)
-        _cell(ws, r, 14, f'{gnd} mΩ', N, alignment=AC)
+        # DCW: single GΩ value only (e.g. 3.25 GΩ)
+        dcw_gohm = round(random.uniform(3.0, 5.0), 2)
+        _cell(ws, r, 11, f'{dcw_gohm:.2f} GΩ', N, alignment=AC)
+        # IR: single GΩ value only (e.g. 4.51 GΩ)
+        ir_gohm = round(random.uniform(2.5, 7.5), 2)
+        _cell(ws, r, 13, f'{ir_gohm:.2f} GΩ', N, alignment=AC)
+        # Ground Continuity: mΩ value
+        gnd = round(random.uniform(3.5, 5.5), 2)
+        _cell(ws, r, 14, f'{gnd:.2f} mΩ', N, alignment=AC)
     _cell(ws, 107, 15, 'OK', N, alignment=AC)
 
     # ─── Stage 29: Post EL Test (rows 113-118) ───
@@ -1094,7 +1041,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
     voltage = _rr(49, 0.5); current_a = _rr(5.4, 0.2)
     _cell(ws, 113, 8, f'{voltage:.2f}V,  {current_a:.3f}A', N, alignment=AM)
 
-    # EL results
     ws.merge_cells('C114:C118')
     _cell(ws, 114, 3, 'EL Inspection and Visual inspection', B, alignment=AV)
     ws.merge_cells('D114:D118'); _cell(ws, 114, 4, '5 pieces', B, alignment=AC)
@@ -1151,7 +1097,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
         _cell(ws, r, 10, snos_final[idx] if idx < len(snos_final) else '', N, alignment=AM)
     _cell(ws, 121, 15, 'OK', N, alignment=AC)
 
-    # Backlabel (126-130)
     ws.merge_cells('C126:C130')
     _cell(ws, 126, 3, 'Backlabel', B, alignment=AV)
     ws.merge_cells('D126:D130'); _cell(ws, 126, 4, '5 pieces', B, alignment=AC)
@@ -1233,7 +1178,6 @@ def _write_all_stages(ws, prefix, start, cell_mfr, cell_eff, cable_len, golden, 
 
 
 def _rand_time(base_hour, base_min, vary_min=15):
-    """Generate a realistic time with ±vary_min variation, returns like '8:20 AM'."""
     total_min = base_hour * 60 + base_min + random.randint(-vary_min, vary_min)
     total_min = total_min % (24 * 60)
     h = total_min // 60
@@ -1246,7 +1190,6 @@ def _rand_time(base_hour, base_min, vary_min=15):
 
 
 def _shift_start(shift):
-    """Random time near shift start: Day ~8:00-8:30 AM, Night ~8:00-8:30 PM."""
     if shift in ('Day', 'A'):
         return _rand_time(8, 15, vary_min=15)
     else:
@@ -1254,8 +1197,23 @@ def _shift_start(shift):
 
 
 def _shift_mid(shift):
-    """Random time near mid-shift: Day ~12:00-1:00 PM, Night ~12:00-1:00 AM."""
     if shift in ('Day', 'A'):
         return _rand_time(12, 30, vary_min=30)
     else:
         return _rand_time(0, 30, vary_min=30)
+
+
+# ── Run directly ──
+if __name__ == '__main__':
+    fp = generate_ipqc_checksheet(
+        date='2025-08-30',
+        shift='Day',
+        po_number='PO-2025-001',
+        cell_manufacturer='Solar Space',
+        cell_efficiency=25.7,
+        jb_cable_length=1200,
+        golden_module_number='GM-2024-001',
+        serial_prefix='GS04875KG302250',
+        serial_start=1,
+    )
+    print(f"Generated: {fp}")

@@ -91,6 +91,20 @@ const DispatchTracker = () => {
   }, [autoRefresh, refreshInterval, selectedCompany, loading]);
 
   const loadCompanies = async () => {
+    // Check localStorage cache first (valid for 5 minutes)
+    const cacheKey = 'dispatch_companies_cache';
+    const cacheTime = 'dispatch_companies_cache_time';
+    const now = Date.now();
+    const cacheExpiry = 5 * 60 * 1000; // 5 minutes
+    
+    const cachedData = localStorage.getItem(cacheKey);
+    const cachedTime = localStorage.getItem(cacheTime);
+    
+    if (cachedData && cachedTime && (now - parseInt(cachedTime)) < cacheExpiry) {
+      setCompanies(JSON.parse(cachedData));
+      return;
+    }
+    
     try {
       // 1. Local DB companies (have full PDI/production data)
       let localCompanies = [];
@@ -131,6 +145,9 @@ const DispatchTracker = () => {
       ];
 
       setCompanies(merged);
+      // Save to cache
+      localStorage.setItem(cacheKey, JSON.stringify(merged));
+      localStorage.setItem(cacheTime, now.toString());
     } catch (err) {
       console.error('Error loading companies:', err);
       setCompanies([]);

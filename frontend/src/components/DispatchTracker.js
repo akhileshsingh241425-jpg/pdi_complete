@@ -239,7 +239,30 @@ const DispatchTracker = () => {
       console.log('PDI Production + Dispatch Status:', result);
 
       if (result.success) {
-        setProductionData(result);
+        // Transform /dispatch-by-party response to match expected format
+        if (company.source === 'party') {
+          const transformed = {
+            success: true,
+            summary: result.summary || {
+              total_produced: result.summary?.total_assigned || 0,
+              total_dispatched: result.summary?.dispatched || 0,
+              total_packed: 0,
+              total_pending: 0
+            },
+            pdi_wise: [],
+            extra_dispatched: {
+              count: result.summary?.total_assigned || 0,
+              serials: [],
+              pallet_groups: result.dispatch_groups || []
+            },
+            extra_packed: { count: 0, serials: [], pallet_groups: [] },
+            dispatch_groups: result.dispatch_groups || [],
+            pallet_groups: result.pallet_groups || []
+          };
+          setProductionData(transformed);
+        } else {
+          setProductionData(result);
+        }
       } else {
         setError(result.error || 'No data found');
         setProductionData(null);

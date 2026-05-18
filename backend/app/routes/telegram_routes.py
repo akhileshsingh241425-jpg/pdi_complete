@@ -171,7 +171,7 @@ def _fetch_dispatch_summary(company_id):
         if party_id:
             try:
                 to_date = datetime.now().strftime('%Y-%m-%d')
-                from_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+                from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
                 
                 # OLD API — paginated for detailed data
                 page = 1

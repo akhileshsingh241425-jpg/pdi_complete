@@ -1644,7 +1644,7 @@ def get_pdi_production_status(company_id):
             try:
                 from datetime import timedelta
                 to_date = datetime.now().strftime('%Y-%m-%d')
-                from_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+                from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
                 
                 # STEP 1: OLD API (LIVE, real-time) â€” fetch ALL PAGES for complete detailed data
                 print(f"[PDI Production] STEP 1: Fetching ALL dispatch pages from OLD API (detailed)...")
@@ -2763,9 +2763,9 @@ def pdi_status(pdi_id):
         return jsonify({"success": False, "error": "party_id query param is required"}), 400
 
     try:
-        days = int(request.args.get('days', '730'))
+        days = int(request.args.get('days', '90'))
     except Exception:
-        days = 730
+        days = 90
     force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
 
     cache = pdi_status.__dict__.get('_cache')
@@ -3614,7 +3614,7 @@ def actual_pdi_batch_compare():
         from datetime import timedelta
         dispatch_lookup = {}
         try:
-            days = 730
+            days = 90
             to_date = datetime.now().strftime('%Y-%m-%d')
             from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             page = 1
@@ -3941,7 +3941,7 @@ def pdi_actual_compare():
         # 4. Party dispatch history (bulk)
         from datetime import timedelta
         to_date = datetime.now().strftime('%Y-%m-%d')
-        from_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
 
         mrp_lookup = {}
         page = 1
@@ -4533,7 +4533,7 @@ def get_dispatch_by_party(party_id):
         if not party_id or len(party_id) < 10:
             return jsonify({"success": False, "error": "Invalid party_id"}), 400
 
-        days = int(request.args.get('days', '730'))
+        days = int(request.args.get('days', '90'))
         company_name = request.args.get('name', '') or party_id
 
         from datetime import timedelta

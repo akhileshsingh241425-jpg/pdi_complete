@@ -707,7 +707,8 @@ PARTY_IDS = {
 # Each variant is a separate call; results merged.
 PARTY_PACKING_NAMES = {
     '931db2c5-b016-4914-b378-69e9f22562a7': [
-        'RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi'
+        'RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi',
+        'RAYS POWER GREEN ENERGY', 'Rays Power Green Energy', 'rays power green energy'
     ],
     'a005562f-568a-46e9-bf2e-700affb171e8': [
         'LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T',
@@ -1564,12 +1565,17 @@ def get_pdi_production_status(company_id):
         
         # Map to MRP party name for packing API â€” fetch ALL sub-parties for comparison
         packing_party_names = []
-        if 'rays' in lower_name:
-            packing_party_names = ['RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi']
-        elif 'larsen' in lower_name or 'l&t' in lower_name or 'lnt' in lower_name:
-            packing_party_names = ['LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T', 'LARSEN & TOUBRO LIMITED', 'LARSEN AND TOUBRO']
-        elif 'sterling' in lower_name or 'sterlin' in lower_name or 's&w' in lower_name:
-            packing_party_names = ['STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'S&W', 'S&W - NTPC']
+        for key, names in PARTY_PACKING_NAMES.items():
+            if key == party_id:
+                packing_party_names = names
+                break
+        if not packing_party_names:
+            if 'rays' in lower_name:
+                packing_party_names = ['RAYS POWER INFRA PRIVATE LIMITED', 'Rays', 'Rays-NTPC', 'Rays-NTPC-Barethi']
+            elif 'larsen' in lower_name or 'l&t' in lower_name or 'lnt' in lower_name:
+                packing_party_names = ['LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T', 'LARSEN & TOUBRO LIMITED', 'LARSEN AND TOUBRO']
+            elif 'sterling' in lower_name or 'sterlin' in lower_name or 's&w' in lower_name:
+                packing_party_names = ['STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'S&W', 'S&W - NTPC']
         
         # Fetch packed serials from packing API
         packed_lookup = {}  # serial -> {pallet_no, running_order, ...}
@@ -1615,18 +1621,7 @@ def get_pdi_production_status(company_id):
         # 6c. Get LIVE dispatch data from MRP Dispatch API (party-dispatch-history.php)
         pdi_dispatch_data = {}  # pdi -> {dispatched: count, packed: count, serials: [...]}
         
-        # Party ID mapping for dispatch API
-        PARTY_IDS = {
-            'rays': '931db2c5-b016-4914-b378-69e9f22562a7',
-            'l&t': 'a005562f-568a-46e9-bf2e-700affb171e8',
-            'larsen': 'a005562f-568a-46e9-bf2e-700affb171e8',
-            'lnt': 'a005562f-568a-46e9-bf2e-700affb171e8',
-            'sterling': '141b81a0-2bab-4790-b825-3c8734d41484',
-            'sterlin': '141b81a0-2bab-4790-b825-3c8734d41484',
-            's&w': '141b81a0-2bab-4790-b825-3c8734d41484'
-        }
-        
-        # Find party_id for this company
+        # Find party_id for this company (using global PARTY_IDS)
         party_id = None
         matched_company = None
         for key, pid in PARTY_IDS.items():

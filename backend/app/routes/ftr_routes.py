@@ -698,8 +698,12 @@ PARTY_IDS = {
     'sterling and wilson renewable energy limited': '141b81a0-2bab-4790-b825-3c8734d41484',
     's&w': '141b81a0-2bab-4790-b825-3c8734d41484',
     'sw': '141b81a0-2bab-4790-b825-3c8734d41484',
+    # S&W NTPC sub-party (found via sales API: "S/W NTPC PDI-5")
+    's&w ntpc': 'c6f85b2b-b137-4ca2-a133-826b7de1357e',
+    's/w ntpc': 'c6f85b2b-b137-4ca2-a133-826b7de1357e',
     # KPI Green Energy
     'kpi green energy': 'kpi-green-energy-party-id',
+    'kpi green energy limited': 'fda91e0b-f0fd-4749-863f-ed7a56842a0e',
     'kpi': 'kpi-green-energy-party-id',
 }
 
@@ -717,10 +721,14 @@ PARTY_PACKING_NAMES = {
     ],
     'a005562f-568a-46e9-bf2e-700affb171e8': [
         'LARSEN & TOUBRO LIMITED, CONSTRUCTION', 'L&T',
-        'LARSEN & TOUBRO LIMITED', 'LARSEN AND TOUBRO'
+        'LARSEN & TOUBRO LIMITED', 'LARSEN AND TOUBRO',
+        'LARSEN & TOUBRO LIMITED, INFRASTRUCTURE'
     ],
     '141b81a0-2bab-4790-b825-3c8734d41484': [
         'STERLING AND WILSON RENEWABLE ENERGY LIMITED', 'S&W', 'S&W - NTPC'
+    ],
+    'c6f85b2b-b137-4ca2-a133-826b7de1357e': [
+        'S&W - NTPC', 'S/W NTPC', 'S/W NTPC PDI-5'
     ],
 }
 

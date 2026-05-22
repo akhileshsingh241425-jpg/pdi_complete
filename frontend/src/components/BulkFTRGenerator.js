@@ -18,6 +18,10 @@ const BulkFTRGenerator = () => {
   const [defaultDate, setDefaultDate] = useState(new Date().toISOString().split('T')[0]); // Default date for Excel without date
   const [startTime, setStartTime] = useState('09:00:00'); // Start time for time range
   const [endTime, setEndTime] = useState('11:00:00'); // End time for time range
+  const [uploadedFile, setUploadedFile] = useState(null); // Original file for server-side generate
+  const [serverGenerating, setServerGenerating] = useState(false);
+
+  const API_BASE_URL = process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE_URL || 'http://localhost:5003';
 
   // Check if user is super admin
   const isSuperAdmin = () => {
@@ -28,6 +32,7 @@ const BulkFTRGenerator = () => {
   const handleExcelUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setUploadedFile(file);
 
     const reader = new FileReader();
     reader.onload = (event) => {
@@ -710,6 +715,74 @@ const BulkFTRGenerator = () => {
   const clearAllData = () => {
     if (window.confirm('Clear all uploaded data?')) {
       setExcelData([]);
+      setUploadedFile(null);
+    }
+  };
+
+  // Server-side bulk generation for large datasets
+  const serverGenerate = async () => {
+    if (!uploadedFile) {
+      alert('Please upload Excel file first!');
+      return;
+    }
+    if (excelData.length === 0) {
+      alert('No data found in Excel!');
+      return;
+    }
+
+    const wattage = prompt('Enter module wattage (WP):', '630');
+    if (!wattage) return;
+
+    setServerGenerating(true);
+    setProgress(0);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', uploadedFile);
+      formData.append('wattage', wattage);
+      formData.append('module_area', '2.7');
+      formData.append('download_type', 'zip');
+
+      const endpoint = API_BASE_URL.endsWith('/api')
+        ? `${API_BASE_URL}/ftr/bulk-generate-from-excel`
+        : `${API_BASE_URL}/api/ftr/bulk-generate-from-excel`;
+
+      const response = await axios.post(endpoint, formData, {
+        responseType: 'blob',
+        onDownloadProgress: (e) => {
+          if (e.total) setProgress(Math.round((e.loaded / e.total) * 100));
+        }
+      });
+
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `FTR_Reports_${excelData.length}_modules.zip`;
+      document.body.appendChild(link);
+      link.click();
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 200);
+
+      setProgress(100);
+      setTimeout(() => setProgress(0), 2000);
+    } catch (error) {
+      console.error('Server generation error:', error);
+      const msg = error.response?.data
+        ? await new Promise(resolve => {
+            const reader = new FileReader();
+            reader.onload = () => {
+              try { resolve(JSON.parse(reader.result).error); }
+              catch { resolve(reader.result); }
+            };
+            reader.readAsText(error.response.data);
+          })
+        : error.message;
+      alert('Server generation failed: ' + msg);
+    } finally {
+      setServerGenerating(false);
     }
   };
 
@@ -1024,19 +1097,46 @@ const BulkFTRGenerator = () => {
           </div>
         </div>
         
-        <button 
-          onClick={() => generateAllReports(downloadType, downloadFormat, moduleType)}
-          disabled={isGenerating || excelData.length === 0}
-          className="generate-btn"
-          style={{ width: '100%', maxWidth: '400px', margin: '0 auto', display: 'block' }}
-        >
-          {isGenerating ? `Generating... ${Math.round(progress)}%` : `🚀 Generate ${downloadType === 'merged' ? 'Merged' : 'Split'} ${downloadFormat.toUpperCase()}`}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+          <button 
+            onClick={() => generateAllReports(downloadType, downloadFormat, moduleType)}
+            disabled={isGenerating || excelData.length === 0}
+            className="generate-btn"
+            style={{ flex: '1', minWidth: '200px', maxWidth: '400px' }}
+          >
+            {isGenerating ? `⚡ Browser Gen... ${Math.round(progress)}%` : `🚀 Generate (Browser)`}
+          </button>
+
+          <button
+            onClick={serverGenerate}
+            disabled={serverGenerating || excelData.length === 0 || !uploadedFile}
+            className="generate-btn"
+            style={{
+              flex: '1', minWidth: '200px', maxWidth: '400px',
+              background: serverGenerating ? '#94a3b8' : '#7c3aed',
+              borderColor: serverGenerating ? '#94a3b8' : '#7c3aed'
+            }}
+          >
+            {serverGenerating
+              ? `☁️ Server Gen... ${Math.round(progress)}%`
+              : `☁️ Server Generate (Fast) - ${excelData.length > 1000 ? '✅ Recommended' : ''}`}
+          </button>
+        </div>
+        {excelData.length > 1000 && (
+          <p style={{ textAlign: 'center', color: '#7c3aed', fontSize: '12px', marginTop: '6px' }}>
+            💡 For {excelData.length} records, use <strong>Server Generate</strong> for best performance
+          </p>
+        )}
       </div>
 
       {isGenerating && (
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${progress}%` }}></div>
+        </div>
+      )}
+      {serverGenerating && (
+        <div className="progress-bar">
+          <div className="progress-fill" style={{ width: `${progress}%`, background: '#7c3aed' }}></div>
         </div>
       )}
     </div>

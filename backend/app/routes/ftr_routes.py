@@ -5602,6 +5602,327 @@ def get_party_workspace_summaries():
 
 
 # ------------------------------------------------------------
+# BULK FTR GENERATION FROM EXCEL
+# ------------------------------------------------------------
+@ftr_bp.route('/bulk-generate-from-excel', methods=['POST'])
+def bulk_generate_from_excel():
+    """
+    Generate bulk FTR reports from Excel file upload.
+    Handles text-formatted cells (date, time, numbers all as text).
+
+    Accepts multipart form:
+      - file: .xlsx/.xls Excel file
+      - wattage: Module wattage (e.g. '630')
+      - module_area: Module area in m² (default 2.7)
+      - download_type: 'zip' (default) or 'merged'
+    """
+    import zipfile
+    import io as _io
+    import pandas as pd
+    import tempfile
+    import shutil
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    import re as _re
+    from PyPDF2 import PdfReader, PdfWriter
+
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+
+        file = request.files['file']
+        if not file.filename.lower().endswith(('.xlsx', '.xls')):
+            return jsonify({'error': 'File must be Excel (.xlsx or .xls)'}), 400
+
+        wattage = str(request.form.get('wattage', '')).strip()
+        module_area = float(request.form.get('module_area', 2.7))
+        download_type = request.form.get('download_type', 'zip')
+
+        # Paths
+        backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        template_path = os.path.join(backend_dir, '..', 'frontend', 'public', 'IV curve template.pdf')
+        if not os.path.exists(template_path):
+            return jsonify({'error': 'Template PDF not found'}), 404
+
+        graph_image_path = None
+        if wattage:
+            img = os.path.join(backend_dir, '..', 'frontend', 'public', 'iv_curves', f'{wattage}.png')
+            if os.path.exists(img):
+                graph_image_path = img
+
+        # ----- Read Excel (all columns as text to preserve formatting) -----
+        df = pd.read_excel(file, dtype=str).fillna('')
+
+        # Build normalised column name lookup
+        def norm(s):
+            return str(s).lower().strip().replace(' ', '_').replace('-', '_').replace('.', '_')
+        col_map = {c: norm(c) for c in df.columns}
+        # Rename in-place
+        import collections
+        seen = collections.Counter()
+        new_cols = []
+        for c in df.columns:
+            n = col_map[c]
+            seen[n] += 1
+            if seen[n] > 1:
+                n = f'{n}_{seen[n]}'
+            new_cols.append(n)
+        df.columns = new_cols
+
+        # Helper: get first non-empty value from multiple possible column names
+        def col_val(row, *names):
+            for name in names:
+                name = norm(name)
+                if name in row and row[name] != '':
+                    return str(row[name]).strip()
+            return ''
+
+        # ----- Parse helpers -----
+        def parse_date(val):
+            v = str(val).strip()
+            if not v:
+                return ''
+            # Remove time part if combined
+            if ' ' in v:
+                v = v.split(' ')[0]
+            # YYYY-MM-DD
+            if _re.match(r'^\d{4}-\d{2}-\d{2}$', v):
+                return v
+            # YYYY/MM/DD
+            if _re.match(r'^\d{4}/\d{2}/\d{2}$', v):
+                return v
+            # DD/MM/YYYY or MM/DD/YYYY – try both
+            m = _re.match(r'^(\d{1,2})[./](\d{1,2})[./](\d{4})$', v)
+            if m:
+                a, b, y = int(m.group(1)), int(m.group(2)), m.group(3)
+                # If first > 12, it must be DD/MM
+                if a > 12:
+                    return f'{y}-{b:02d}-{a:02d}'
+                # If second > 12, it must be MM/DD
+                if b > 12:
+                    return f'{y}-{a:02d}-{b:02d}'
+                # Ambiguous – default to DD/MM/YYYY (Indian convention)
+                return f'{y}-{b:02d}-{a:02d}'
+            # DD-MM-YYYY or MM-DD-YYYY
+            m2 = _re.match(r'^(\d{1,2})-(\d{1,2})-(\d{4})$', v)
+            if m2:
+                a, b, y = int(m2.group(1)), int(m2.group(2)), m2.group(3)
+                if a > 12:
+                    return f'{y}-{b:02d}-{a:02d}'
+                if b > 12:
+                    return f'{y}-{a:02d}-{b:02d}'
+                return f'{y}-{b:02d}-{a:02d}'
+            return v
+
+        def parse_time(val):
+            v = str(val).strip()
+            if not v:
+                return ''
+            # Remove date part if combined
+            if ' ' in v:
+                parts = v.split(' ')
+                v = parts[-1] if ':' in parts[-1] else parts[0]
+            # HH:MM:SS or HH:MM
+            m = _re.match(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$', v, _re.IGNORECASE)
+            if m:
+                h, mi, s, ampm = int(m.group(1)), m.group(2), m.group(3) or '00', m.group(4)
+                if ampm:
+                    if ampm.upper() == 'PM' and h < 12:
+                        h += 12
+                    if ampm.upper() == 'AM' and h == 12:
+                        h = 0
+                return f'{h:02d}:{mi}:{s}'
+            # Try just digits (Excel serial time stored as text)
+            try:
+                h = int(v[:2])
+                mi = v[2:4] if len(v) >= 4 else '00'
+                return f'{h:02d}:{mi}:00'
+            except:
+                pass
+            return v
+
+        def to_float(val, default=0.0):
+            v = str(val).strip().replace(',', '').replace(' ', '')
+            if not v:
+                return default
+            try:
+                return float(v)
+            except:
+                return default
+
+        # ----- Parse date/time into datetime for PDF metadata + ZIP timestamp -----
+        def parse_datetime(ds, ts):
+            ds = ds.strip()
+            ts = ts.strip()
+            if not ds:
+                return None
+            # YYYY-MM-DD or YYYY/MM/DD
+            m = _re.match(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$', ds)
+            if m:
+                y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+            else:
+                # DD/MM/YYYY or MM/DD/YYYY
+                m = _re.match(r'^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$', ds)
+                if not m:
+                    return None
+                a, b, y = int(m.group(1)), int(m.group(2)), int(m.group(3))
+                if a > 12:
+                    d, mo = a, b
+                elif b > 12:
+                    mo, d = a, b
+                else:
+                    d, mo = a, b  # DD/MM (Indian)
+                y = y
+            h, mi, s = 0, 0, 0
+            if ts:
+                tm = _re.match(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?', ts)
+                if tm:
+                    h, mi = int(tm.group(1)), int(tm.group(2))
+                    s = int(tm.group(3)) if tm.group(3) else 0
+            try:
+                return datetime(y, mo, d, h, mi, s)
+            except:
+                return None
+
+        # ----- Set PDF metadata (CreationDate from Excel) -----
+        def set_pdf_meta(pdf_buf, dt_obj):
+            pdf_buf.seek(0)
+            reader = PdfReader(pdf_buf)
+            writer = PdfWriter()
+            writer.append(reader)
+            if dt_obj:
+                pdf_dt = dt_obj.strftime('D:%Y%m%d%H%M%S')
+                writer.add_metadata({
+                    '/CreationDate': pdf_dt,
+                    '/ModDate': pdf_dt,
+                    '/Title': 'FTR Report',
+                    '/Author': 'Gautam Solar',
+                })
+            out = _io.BytesIO()
+            writer.write(out)
+            out.seek(0)
+            return out
+
+        # ----- Generate PDF for one row -----
+        def generate_one(row_idx, row):
+            serial = col_val(row, 'serialnumber', 'id', 'serial_number', 'barcode', 'sr_no', 'module_id')
+            if not serial:
+                return None
+
+            date_str = parse_date(col_val(row, 'date', 'test_date', 'testdate'))
+            time_str = parse_time(col_val(row, 'time', 'test_time', 'testtime'))
+            dt_obj = parse_datetime(date_str, time_str)
+
+            # Compute fill factor if not provided
+            pmax = to_float(col_val(row, 'pmax', 'p_max'))
+            voc  = to_float(col_val(row, 'voc'))
+            isc  = to_float(col_val(row, 'isc'))
+            vpm  = to_float(col_val(row, 'vpm', 'v_pm'))
+            ipm  = to_float(col_val(row, 'ipm', 'i_pm'))
+            ff_input = to_float(col_val(row, 'ff', 'fillfactor', 'fill_factor'))
+            if ff_input == 0.0 and voc > 0 and isc > 0:
+                ff_input = (pmax / (voc * isc)) * 100
+
+            irr = to_float(col_val(row, 'irradiance', 'irr_target', 'irr'), 1000)
+            mt  = to_float(col_val(row, 'moduletemp', 'module_temp', 't_object'), 25)
+            at  = to_float(col_val(row, 'ambienttemp', 'ambient_temp', 't_ambient'), 25)
+            rs  = to_float(col_val(row, 'rs'))
+            rsh = to_float(col_val(row, 'rsh'))
+            eff = to_float(col_val(row, 'eff', 'efficiency'))
+            if eff == 0.0 and module_area > 0:
+                eff = (pmax / (module_area * 1000)) * 100
+
+            test_data = {
+                'producer': col_val(row, 'producer', 'manufacturer') or 'Gautam Solar',
+                'moduleType': f'{wattage}W',
+                'serialNumber': serial,
+                'testDate': date_str,
+                'testTime': time_str,
+                'irradiance': irr,
+                'moduleTemp': mt,
+                'ambientTemp': at,
+                'moduleArea': module_area,
+                'results': {
+                    'pmax': pmax,
+                    'vpm': vpm,
+                    'ipm': ipm,
+                    'voc': voc,
+                    'isc': isc,
+                    'fillFactor': ff_input,
+                    'rs': rs,
+                    'rsh': rsh,
+                    'efficiency': eff
+                }
+            }
+
+            try:
+                pdf_bytes = create_ftr_report(template_path, test_data, graph_image_path)
+                # Set PDF metadata to Excel date/time
+                pdf_bytes = set_pdf_meta(pdf_bytes, dt_obj)
+                safe_name = serial.replace('/', '_').replace('\\', '_').replace(':', '_')
+                return (safe_name, pdf_bytes, dt_obj)
+            except Exception as e:
+                print(f'  ERROR [{serial}]: {e}')
+                return None
+
+        # ----- Process all rows with thread pool -----
+        total = len(df)
+        print(f'[bulk-generate] {total} modules, wattage={wattage}, graph={graph_image_path is not None}')
+
+        results = []
+        BATCH_PRINT = max(1, min(total // 20, 5000))
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            fut_map = {pool.submit(generate_one, idx, row): idx for idx, row in df.iterrows()}
+            done = 0
+            for f in as_completed(fut_map):
+                done += 1
+                r = f.result()
+                if r:
+                    results.append(r)
+                if done % BATCH_PRINT == 0 or done == total:
+                    print(f'  [{done}/{total}] generated {len(results)} PDFs')
+
+        print(f'[bulk-generate] done: {len(results)}/{total} generated')
+
+        if not results:
+            return jsonify({'error': 'No valid data rows found'}), 400
+
+        # ----- Build ZIP response with proper timestamps -----
+        zip_buf = _io.BytesIO()
+        with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for name, pdf_buf, dt_obj in results:
+                pdf_buf.seek(0)
+                # Set ZIP entry timestamp to Excel date/time
+                if dt_obj:
+                    zi = zipfile.ZipInfo(
+                        f'{name}.pdf',
+                        date_time=(
+                            dt_obj.year, dt_obj.month, dt_obj.day,
+                            dt_obj.hour, dt_obj.minute, dt_obj.second
+                        )
+                    )
+                    zi.compress_type = zipfile.ZIP_DEFLATED
+                    zf.writestr(zi, pdf_buf.read())
+                else:
+                    zf.writestr(f'{name}.pdf', pdf_buf.read())
+
+        zip_buf.seek(0)
+        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+        return send_file(
+            zip_buf,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=f'FTR_Reports_{total}_{ts}.zip'
+        )
+
+    except Exception as e:
+        print(f'Error in bulk-generate-from-excel: {e}')
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+# ------------------------------------------------------------
 # Startup pre-warm: kick off the cache warmer ~5 sec after import so
 # the server is fully up first. Eliminates cold-start 502 cascades.
 # ------------------------------------------------------------

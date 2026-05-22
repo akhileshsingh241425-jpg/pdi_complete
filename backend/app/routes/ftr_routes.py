@@ -1672,7 +1672,7 @@ def get_pdi_production_status(company_id):
                     local_details = {}
                     try:
                         page = 1
-                        max_pages = 20
+                        max_pages = 200
                         while page <= max_pages:
                             old_resp = http_requests.post(
                                 'https://umanmrp.in/api/party-dispatch-history.php',
@@ -2848,7 +2848,7 @@ def pdi_status(pdi_id):
         from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
         mrp_lookup = {}
         page = 1
-        max_pages = 50
+        max_pages = 200
         fetch_failed = False
         while page <= max_pages:
             try:
@@ -3601,7 +3601,7 @@ def actual_pdi_batch_compare():
             to_date = datetime.now().strftime('%Y-%m-%d')
             from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             page = 1
-            max_pages = 50
+            max_pages = 200
             while page <= max_pages:
                 try:
                     dr = http_requests.post(
@@ -3928,7 +3928,7 @@ def pdi_actual_compare():
 
         mrp_lookup = {}
         page = 1
-        max_pages = 50
+        max_pages = 200
         while page <= max_pages:
             try:
                 resp = http_requests.post(
@@ -4236,7 +4236,7 @@ def _warm_party_dispatch_caches_bg(parties, days=180):
             try:
                 mrp_lookup = {}
                 page = 1
-                max_pages = 50
+                max_pages = 200
                 while page <= max_pages:
                     resp = http_requests.post(
                         'https://umanmrp.in/api/party-dispatch-history.php',
@@ -4527,7 +4527,7 @@ def get_dispatch_by_party(party_id):
 
         mrp_lookup = {}
         page = 1
-        max_pages = 50
+        max_pages = 200
 
         while page <= max_pages:
             try:

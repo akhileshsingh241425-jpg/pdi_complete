@@ -993,9 +993,9 @@ def fetch_dispatch_history(company_name):
     total_barcodes = 0
     total_dispatches = 0
     
-    # Date range - 1 year back to today
+    # Date range - 2 years back to today
     today = datetime.now().strftime('%Y-%m-%d')
-    from_date = '2025-01-01'  # Start from 2025
+    from_date = (datetime.now() - timedelta(days=730)).strftime('%Y-%m-%d')
     
     while True:
         try:
@@ -1425,9 +1425,11 @@ def get_pdi_production_status(company_id):
     
     Query params:
     - force_refresh=true: Bypass cache and fetch fresh data
+    - days: Dispatch history window in days (default 365)
     """
     # Check if force refresh requested
     force_refresh = request.args.get('force_refresh', '').lower() == 'true'
+    dispatch_days = int(request.args.get('days', '365'))
     print(f"[PDI Production] === API CALLED === force_refresh={force_refresh}, time={datetime.now().strftime('%H:%M:%S')}")
     
     try:
@@ -1644,7 +1646,7 @@ def get_pdi_production_status(company_id):
             try:
                 from datetime import timedelta
                 to_date = datetime.now().strftime('%Y-%m-%d')
-                from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+                from_date = (datetime.now() - timedelta(days=dispatch_days)).strftime('%Y-%m-%d')
                 
                 # STEP 1: OLD API (LIVE, real-time) â€” fetch ALL PAGES for complete detailed data
                 print(f"[PDI Production] STEP 1: Fetching ALL dispatch pages from OLD API (detailed)...")
@@ -2763,9 +2765,9 @@ def pdi_status(pdi_id):
         return jsonify({"success": False, "error": "party_id query param is required"}), 400
 
     try:
-        days = int(request.args.get('days', '90'))
+        days = int(request.args.get('days', '365'))
     except Exception:
-        days = 90
+        days = 365
     force = request.args.get('force', '').lower() in ('1', 'true', 'yes')
 
     cache = pdi_status.__dict__.get('_cache')
@@ -3614,7 +3616,7 @@ def actual_pdi_batch_compare():
         from datetime import timedelta
         dispatch_lookup = {}
         try:
-            days = 90
+            days = 365
             to_date = datetime.now().strftime('%Y-%m-%d')
             from_date = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
             page = 1
@@ -3941,7 +3943,7 @@ def pdi_actual_compare():
         # 4. Party dispatch history (bulk)
         from datetime import timedelta
         to_date = datetime.now().strftime('%Y-%m-%d')
-        from_date = (datetime.now() - timedelta(days=90)).strftime('%Y-%m-%d')
+        from_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
 
         mrp_lookup = {}
         page = 1
@@ -4533,7 +4535,7 @@ def get_dispatch_by_party(party_id):
         if not party_id or len(party_id) < 10:
             return jsonify({"success": False, "error": "Invalid party_id"}), 400
 
-        days = int(request.args.get('days', '90'))
+        days = int(request.args.get('days', '365'))
         company_name = request.args.get('name', '') or party_id
 
         from datetime import timedelta

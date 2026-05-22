@@ -144,10 +144,10 @@ try:
         row += 1
     
     # Auto-width
-    for col in ws.columns:
+    for col_cells in ws.iter_cols(min_row=3, max_row=ws.max_row):
         max_len = 0
-        col_letter = col[0].column_letter
-        for cell in col:
+        col_letter = col_cells[0].column_letter
+        for cell in col_cells:
             if cell.value:
                 max_len = max(max_len, len(str(cell.value)))
         ws.column_dimensions[col_letter].width = max(max_len + 3, 12)
@@ -187,10 +187,10 @@ try:
             r += 1
         
         # Auto-width
-        for col in ws2.columns:
+        for col_cells in ws2.iter_cols(min_row=3, max_row=ws2.max_row):
             max_len = 0
-            col_letter = col[0].column_letter
-            for cell in col:
+            col_letter = col_cells[0].column_letter
+            for cell in col_cells:
                 if cell.value:
                     max_len = max(max_len, len(str(cell.value)))
             ws2.column_dimensions[col_letter].width = max(max_len + 3, 12)

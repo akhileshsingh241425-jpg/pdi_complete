@@ -1585,6 +1585,11 @@ def get_pdi_production_status(company_id):
             if key in lower_name:
                 party_ids.add(pid)
                 matched_companies.append(key.upper())
+        # Also include Rays Power Green Energy sub-party for dispatch lookup
+        # because modules dispatched under RAYS GREEN ENERGY MANUFACTURING
+        # have a different UUID (55aa8523-...) than the main Rays party
+        if any('rays' in k for k in matched_companies) and '55aa8523-1026-42bf-9df7-a9327a618ba8' not in party_ids:
+            party_ids.add('55aa8523-1026-42bf-9df7-a9327a618ba8')
         party_ids = list(party_ids)
         
         # Map to MRP party name for packing API â€” fetch ALL sub-parties for comparison

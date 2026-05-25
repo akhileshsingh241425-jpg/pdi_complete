@@ -334,7 +334,20 @@ const BulkFTRGenerator = () => {
     setIsGenerating(true);
     setProgress(0);
 
-    // Pre-calculate times for all reports (random interval 45s-180s between each)
+    // Anti-throttle: browser minimize karne pe Chrome rAF + setTimeout
+    // throttle ho jata hai (1fps), isliye generation rukti hai.
+    // Inaudible audio context tab ko "active" rakhta hai.
+    let antiThrottle;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (AC) {
+        antiThrottle = new AC();
+        const src = antiThrottle.createOscillator();
+        src.frequency.value = 0; // inaudible
+        src.connect(antiThrottle.destination);
+        src.start();
+      }
+    } catch (e) { antiThrottle = null; }
     const generatedTimes = [];
     const parseTimeToSeconds = (timeStr) => {
       const [h, m, s] = timeStr.split(':').map(Number);
@@ -639,11 +652,14 @@ const BulkFTRGenerator = () => {
     // Upload all PDFs to backend
     try {
       const uploadResult = await uploadPDFsToBackend(pdfDataArray);
+      // Anti-throttle cleanup
+      if (antiThrottle) antiThrottle.close().catch(() => {});
       setIsGenerating(false);
       const formatText = format === 'word' ? 'Word' : 'PDF';
       const modeText = downloadMode === 'merged' ? `merged ${formatText}` : `${pdfDataArray.length} individual ${formatText} files`;
       alert(`✅ ${uploadResult.files.length} FTR reports generated!\n📥 Downloaded: ${modeText}`);
     } catch (error) {
+      if (antiThrottle) antiThrottle.close().catch(() => {});
       setIsGenerating(false);
       const formatText = format === 'word' ? 'Word' : 'PDF';
       const modeText = downloadMode === 'merged' ? `merged ${formatText}` : `${pdfDataArray.length} individual ${formatText} files`;

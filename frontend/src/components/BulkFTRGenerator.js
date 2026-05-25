@@ -21,6 +21,233 @@ const BulkFTRGenerator = () => {
   const [uploadedFile, setUploadedFile] = useState(null); // Original file for server-side generate
   const [serverGenerating, setServerGenerating] = useState(false);
 
+  const API_BASE_URL = process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5003' : '');
+
+  // Check if user is super admin
+  const isSuperAdmin = () => {
+    return localStorage.getItem('userRole') === 'super_admin';
+  };
+
+  // Handle Excel file upload
+  const handleExcelUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploadedFile(file);
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const workbook = XLSX.read(event.target.result, { type: 'binary' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
+      
+      // Helper function to get value by flexible column name matching
+      const getValue = (row, ...possibleNames) => {
+        for (const name of possibleNames) {
+          // Try exact match
+          if (row[name] !== undefined && row[name] !== null && row[name] !== '') {
+            return row[name];
+          }
+          // Try case-insensitive match
+          const lowerName = name.toLowerCase();
+          for (const key of Object.keys(row)) {
+            if (key.toLowerCase() === lowerName || key.toLowerCase().replace(/[_\s]/g, '') === lowerName.replace(/[_\s]/g, '')) {
+              if (row[key] !== undefined && row[key] !== null && row[key] !== '') {
+                return row[key];
+              }
+            }
+          }
+        }
+        return null;
+      };
+      
+      // Normalize data - map various column names to standard names
+      // Ask user for module area to apply when Excel doesn't contain it
+      const moduleAreaInput = prompt('Enter Module Area in m² for these records (e.g., 2.7). Leave blank to use values from Excel if present:', '2.7');
+      const defaultModuleArea = moduleAreaInput !== null && moduleAreaInput !== '' ? parseFloat(moduleAreaInput) : null;
+
+      const normalizedData = data.map((row, idx) => {
+        // Debug: log first row column names
+        if (idx === 0) {
+          console.log('Excel columns found:', Object.keys(row));
+          console.log('First row data:', row);
+        }
+        
+        // Handle date and time - can be combined or separate
+        let dateVal = getValue(row, 'Date', 'date') || '';
+        let timeVal = getValue(row, 'Time', 'time') || '';
+        
+        if (typeof dateVal === 'number' && dateVal > 40000) {
+          // Excel Julian date - only extract date portion.
+          // Time is intentionally NOT derived from decimal so UI Time Range
+          // controls the report time when no explicit Time column exists.
+          const excelEpoch = new Date(1899, 11, 30);
+          const date = new Date(excelEpoch.getTime() + dateVal * 86400000);
+          dateVal = date.toISOString().split('T')[0];
+        } else if (typeof dateVal === 'string' && dateVal.includes(' ')) {
+          // Date string with time like "1/28/2026 17:05"
+          const parts = dateVal.split(' ');
+          const datePart = parts[0];
+          const timePart = parts[1] || '';
+          
+          // Parse date part (could be M/D/YYYY or YYYY-MM-DD)
+          if (datePart.includes('/')) {
+            const [m, d, y] = datePart.split('/');
+            dateVal = `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+          } else {
+            dateVal = datePart;
+          }
+          
+          // Use time from date string if not provided separately
+          if (!timeVal && timePart) {
+            timeVal = timePart.includes(':') ? timePart : timePart + ':00';
+            // Ensure HH:MM:SS format
+            if (timeVal.split(':').length === 2) {
+              timeVal = timeVal + ':00';
+            }
+          }
+        }
+        
+        // Default time if still empty - mark as empty, will be assigned during generation
+        if (!timeVal) {
+          timeVal = ''; // Will be assigned during report generation with random interval
+        }
+        
+        // Default date if still empty - use user input
+        if (!dateVal) {
+          dateVal = defaultDate || new Date().toISOString().split('T')[0];
+        }
+        
+        return {
+          // Serial Number - try multiple column names
+          SerialNumber: getValue(row, 'ID', 'Id', 'id', 'SerialNumber', 'Serial Number', 'serial_number', 'Barcode', 'barcode') || '',
+          // Module Type
+          ModuleType: getValue(row, 'ModuleType', 'Module Type', 'module_type', 'Type', 'type') || '',
+          // Producer
+          Producer: getValue(row, 'Producer', 'producer', 'Manufacturer') || 'Gautam Solar',
+          // Test values
+          Pmax: parseFloat(getValue(row, 'Pmax', 'pmax', 'PMAX') || 0),
+          Voc: parseFloat(getValue(row, 'Voc', 'voc', 'VOC') || 0),
+          Isc: parseFloat(getValue(row, 'Isc', 'isc', 'ISC') || 0),
+          Vpm: parseFloat(getValue(row, 'Vpm', 'vpm', 'VPM') || 0),
+          Ipm: parseFloat(getValue(row, 'Ipm', 'ipm', 'IPM') || 0),
+          FF: parseFloat(getValue(row, 'FF', 'ff', 'FillFactor', 'Fill_Factor') || 0),
+          Rs: parseFloat(getValue(row, 'Rs', 'rs', 'RS') || 0),
+          Rsh: parseFloat(getValue(row, 'Rsh', 'rsh', 'RSH') || 0),
+          Eff: parseFloat(getValue(row, 'Eff', 'eff', 'Efficiency', 'EFF') || 0),
+          // Temperature
+          ModuleTemp: parseFloat(getValue(row, 'T_Object', 't_object', 'ModuleTemp', 'Cel_T', 'Module_Temp') || 25),
+          AmbientTemp: parseFloat(getValue(row, 'T_Ambient', 't_ambient', 'AmbientTemp', 'Ambient', 'Ambient_Temp') || 25),
+          // Irradiance - check all possible column names
+          Irradiance: parseFloat(getValue(row, 'Irradiance', 'irradiance', 'Irr_Target', 'irr_target', 'IRR', 'Irr', 'IrrTarget') || 1000),
+          // Module Area (m2) - prefer Excel value, otherwise use prompt default or 2.7
+          ModuleArea: (() => {
+            const ma = getValue(row, 'ModuleArea', 'Module Area', 'Module_Area', 'Area');
+            if (ma !== null && ma !== '') {
+              const parsed = parseFloat(ma);
+              return isNaN(parsed) ? (defaultModuleArea !== null ? defaultModuleArea : 2.7) : parsed;
+            }
+            return defaultModuleArea !== null ? defaultModuleArea : 2.7;
+          })(),
+          // Date and Time
+          Date: dateVal,
+          Time: timeVal,
+          // Class
+          Class: getValue(row, 'Class', 'class', 'Irr_Target_Class') || ''
+        };
+      });
+      
+      setExcelData(normalizedData);
+      alert(`${normalizedData.length} records loaded from Excel!`);
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  // Generate single PDF and return blob
+  const generateSinglePDFBlob = async (testData, graphImage) => {
+    return new Promise((resolve, reject) => {
+      const container = document.createElement('div');
+      container.style.position = 'absolute';
+      container.style.left = '-9999px';
+      container.style.top = '0';
+      document.body.appendChild(container);
+
+      const tempDiv = document.createElement('div');
+      container.appendChild(tempDiv);
+      
+      import('react-dom/client').then(({ createRoot }) => {
+        const root = createRoot(tempDiv);
+        root.render(<FTRTemplate testData={testData} graphImage={graphImage} />);
+        
+        // Wait for image to load before generating PDF
+        const waitForImages = () => {
+          return new Promise((resolve) => {
+            const images = tempDiv.getElementsByTagName('img');
+            if (images.length === 0) {
+              resolve();
+              return;
+            }
+            
+            let loadedCount = 0;
+            const totalImages = images.length;
+            
+            const checkComplete = () => {
+              loadedCount++;
+              if (loadedCount >= totalImages) {
+                resolve();
+              }
+            };
+            
+            Array.from(images).forEach(img => {
+              if (img.complete) {
+                checkComplete();
+              } else {
+                img.onload = checkComplete;
+                img.onerror = checkComplete; // Continue even if image fails
+              }
+            });
+            
+            // Timeout fallback after 400ms (graphs are base64, load fast)
+            setTimeout(resolve, 400);
+          });
+        };
+        
+        // Wait for component render + images (reduced from 500ms)
+        setTimeout(async () => {
+          await waitForImages();
+          
+          const opt = {
+            margin: 0,
+            image: { type: 'jpeg', quality: 0.95 },
+            html2canvas: { 
+              scale: 2,
+              useCORS: true,
+              allowTaint: true,
+              backgroundColor: '#ffffff',
+              logging: false,
+              imageTimeout: 400
+            },
+            jsPDF: { 
+              orientation: 'portrait', 
+              unit: 'mm', 
+              format: 'a4',
+              compress: true
+            }
+          };
+
+          html2pdf().set(opt).from(tempDiv.firstChild).outputPdf('blob').then((blob) => {
+            root.unmount();
+            document.body.removeChild(container);
+            resolve(blob);
+          }).catch(reject);
+        }, 100);
+      }).catch(reject);
+    });
+  };
+
+  // Upload PDFs to backend
+  const uploadPDFsToBackend = async (pdfDataArray) => {
+    try {
       const API_BASE_URL = process.env.REACT_APP_API_URL || process.env.REACT_APP_API_BASE_URL || (window.location.hostname === 'localhost' ? 'http://localhost:5003' : '');
       const endpoint = API_BASE_URL.endsWith('/api') ? `${API_BASE_URL}/ftr/upload-bulk` : `${API_BASE_URL}/api/ftr/upload-bulk`;
       
@@ -533,7 +760,7 @@ const BulkFTRGenerator = () => {
 
       const endpoint = API_BASE_URL.endsWith('/api')
         ? `${API_BASE_URL}/ftr/bulk-generate-from-excel`
-        : (API_BASE_URL ? `${API_BASE_URL}/api/ftr/bulk-generate-from-excel` : `/api/ftr/bulk-generate-from-excel`);
+        : `${API_BASE_URL}/api/ftr/bulk-generate-from-excel`;
 
       const response = await axios.post(endpoint, formData, {
         responseType: 'blob',
